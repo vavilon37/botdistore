@@ -411,29 +411,19 @@ async def cb_item(call: CallbackQuery):
         pass
 
     photos = await db.get_item_photos(item_id)
+    if not photos and item["photo_id"]:
+        photos = [item["photo_id"]]
 
-    if len(photos) > 1:
-        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
-        media += [InputMediaPhoto(media=pid) for pid in photos[1:]]
-        await call.message.answer_media_group(media)
-        await call.message.answer("⬆️ Фото товара", reply_markup=kb.item_kb(item_id, is_admin))
-        await call.message.delete()
-    elif photos:
-        await call.message.answer_photo(
-            photos[0], caption=text,
-            parse_mode="HTML",
-            reply_markup=kb.item_kb(item_id, is_admin)
-        )
-        await call.message.delete()
-    elif item["photo_id"]:
-        await call.message.answer_photo(
-            item["photo_id"], caption=text,
-            parse_mode="HTML",
-            reply_markup=kb.item_kb(item_id, is_admin)
-        )
-        await call.message.delete()
+    await call.message.delete()
+    if photos:
+        await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=kb.item_kb(item_id, is_admin))
+        for photo in photos[1:]:
+            try:
+                await call.message.answer_photo(photo)
+            except Exception:
+                pass
     else:
-        await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.item_kb(item_id, is_admin))
+        await call.message.answer(text, parse_mode="HTML", reply_markup=kb.item_kb(item_id, is_admin))
 
 
 @router.callback_query(F.data.startswith("page:"))
