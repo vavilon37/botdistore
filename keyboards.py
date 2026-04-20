@@ -12,7 +12,7 @@ def main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
         [KeyboardButton(text="🔍 Поиск по названию"), KeyboardButton(text="💰 Фильтр по цене")],
         [KeyboardButton(text="🍎 Рынок б/у iPhone")],
-        [KeyboardButton(text="❤️ Избранное"), KeyboardButton(text="🔔 Подписки")],
+        [KeyboardButton(text="❤️ Избранное")],
         [KeyboardButton(text="🔧 Сервис"), KeyboardButton(text="ℹ️ О боте")],
     ], resize_keyboard=True)
 
@@ -115,9 +115,6 @@ def phone_card_kb(index: int, total: int, item_id: int, is_admin: bool = False,
     buttons.append([InlineKeyboardButton(text=f"{index + 1} / {total}", callback_data="noop")])
     fav_text = "❤️ В избранном" if is_fav else "🤍 В избранное"
     buttons.append([InlineKeyboardButton(text=fav_text, callback_data=f"fav:{item_id}")])
-    if item_name:
-        sub_text = "🔔 Подписан" if is_sub else "🔕 Подписаться"
-        buttons.append([InlineKeyboardButton(text=sub_text, callback_data=f"sub:{item_name}")])
     if views:
         buttons.append([InlineKeyboardButton(text=f"👁 {views} просмотров", callback_data="noop")])
     buttons.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")])
