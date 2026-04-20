@@ -157,10 +157,14 @@ def admin_menu() -> ReplyKeyboardMarkup:
 
 def price_filter_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="до 10 000 ₽", callback_data="price:0:10000")],
-        [InlineKeyboardButton(text="10 000 — 30 000 ₽", callback_data="price:10000:30000")],
-        [InlineKeyboardButton(text="30 000 — 60 000 ₽", callback_data="price:30000:60000")],
-        [InlineKeyboardButton(text="от 60 000 ₽", callback_data="price:60000:0")],
+        [InlineKeyboardButton(text="до 5 000 ₽", callback_data="price:0:5000")],
+        [InlineKeyboardButton(text="5 000 — 10 000 ₽", callback_data="price:5000:10000")],
+        [InlineKeyboardButton(text="10 000 — 20 000 ₽", callback_data="price:10000:20000")],
+        [InlineKeyboardButton(text="20 000 — 35 000 ₽", callback_data="price:20000:35000")],
+        [InlineKeyboardButton(text="35 000 — 55 000 ₽", callback_data="price:35000:55000")],
+        [InlineKeyboardButton(text="55 000 — 80 000 ₽", callback_data="price:55000:80000")],
+        [InlineKeyboardButton(text="от 80 000 ₽", callback_data="price:80000:0")],
+        [InlineKeyboardButton(text="✏️ Ввести свой диапазон", callback_data="price:custom")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
     ])
 

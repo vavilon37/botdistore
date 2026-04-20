@@ -31,6 +31,10 @@ class SearchState(StatesGroup):
     waiting_query = State()
 
 
+class PriceState(StatesGroup):
+    waiting_range = State()
+
+
 class FilterState(StatesGroup):
     choosing_category = State()
     choosing_condition = State()
@@ -736,9 +740,50 @@ async def cmd_price_filter(message: Message):
     await message.answer("Выберите ценовой диапазон:", reply_markup=kb.price_filter_kb())
 
 
+@router.callback_query(F.data == "price:custom")
+async def cb_price_custom(call: CallbackQuery, state: FSMContext):
+    await state.set_state(PriceState.waiting_range)
+    await safe_edit(call, "Введите диапазон цен в формате:\n<b>10000-50000</b>\nили просто одно число — до этой суммы.", parse_mode="HTML")
+
+
+@router.message(PriceState.waiting_range)
+async def process_price_range(message: Message, state: FSMContext):
+    await state.clear()
+    text = message.text.strip().replace(" ", "").replace(",", "")
+    min_price = None
+    max_price = None
+
+    if "-" in text:
+        parts = text.split("-", 1)
+        if parts[0].isdigit() and parts[1].isdigit():
+            min_price = int(parts[0])
+            max_price = int(parts[1])
+        else:
+            await message.answer("Неверный формат. Пример: 15000-40000", reply_markup=kb.main_menu())
+            return
+    elif text.isdigit():
+        max_price = int(text)
+    else:
+        await message.answer("Неверный формат. Пример: 15000-40000 или просто 30000", reply_markup=kb.main_menu())
+        return
+
+    items = await db.get_items(min_price=min_price, max_price=max_price)
+    uid = message.from_user.id
+
+    if not items:
+        await message.answer("Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu())
+        return
+
+    items = [dict(i) for i in items]
+    user_filters[uid] = {"items": items, "page": 0}
+    label = f"до {max_price:,} ₽" if not min_price else f"{min_price:,} — {max_price:,} ₽" if max_price else f"от {min_price:,} ₽"
+    await message.answer(f"💰 {label} — {len(items)} товаров:", reply_markup=kb.items_list_kb(items))
+
+
 @router.callback_query(F.data.startswith("price:"))
 async def cb_price_filter(call: CallbackQuery):
-    _, min_p, max_p = call.data.split(":")
+    parts = call.data.split(":")
+    min_p, max_p = parts[1], parts[2]
     min_price = int(min_p) or None
     max_price = int(max_p) or None
 
