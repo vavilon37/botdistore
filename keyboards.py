@@ -45,7 +45,7 @@ def _search_btn(label: str) -> list:
 
 def iphone_groups_kb(cond: str) -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=g, callback_data=f"igrp:{g}")] for g in IPHONE_GROUPS]
-    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data=f"scat:iphone|{cond}")])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data=f"scond:{cond}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
