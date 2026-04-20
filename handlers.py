@@ -114,17 +114,24 @@ async def process_search(message: Message, state: FSMContext):
 
 @router.message(F.text == "🍎 Весь прайс iPhone")
 async def cmd_iphone_pricelist(message: Message):
+    import random
     items = await db.search_items("iPhone")
     if not items:
         await message.answer("Товаров iPhone не найдено.", reply_markup=kb.main_menu())
         return
     uid = message.from_user.id
-    user_filters[uid] = {"items": [dict(i) for i in items], "page": 0}
-    await message.answer(
-        f"🍎 <b>Прайс лист iPhone</b> — {len(items)} шт.:",
-        parse_mode="HTML",
-        reply_markup=kb.items_list_kb(user_filters[uid]["items"])
-    )
+    shuffled = [dict(i) for i in items]
+    random.shuffle(shuffled)
+    user_filters[uid] = {"items": shuffled, "phone_index": 0, "card_msg_ids": []}
+
+    is_admin = False
+    try:
+        from bot import ADMIN_IDS
+        is_admin = message.from_user.id in ADMIN_IDS
+    except Exception:
+        pass
+
+    await _send_phone_card(message, shuffled, 0, is_admin, uid)
 
 
 @router.message(F.text == "🔧 Сервис")
