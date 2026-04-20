@@ -7,7 +7,7 @@ CONDITIONS = ["Новое", "Как новое", "Хорошее", "Удовле
 
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="💻 Ноутбуки")],
+        [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="♻️ Смартфоны Б/У")],
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
         [KeyboardButton(text="🔍 Поиск по названию")],

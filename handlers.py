@@ -52,8 +52,6 @@ def format_item(item) -> str:
 
 
 MENU_CATEGORY_MAP = {
-    "📱 Смартфоны": "Смартфоны",
-    "💻 Ноутбуки": "Ноутбуки",
     "🎧 Наушники": "Наушники",
     "🔌 Аксессуары": "Аксессуары",
     "📟 Планшеты": "Планшеты",
@@ -61,13 +59,21 @@ MENU_CATEGORY_MAP = {
 }
 
 
+@router.message(F.text == "📱 Смартфоны")
+async def cmd_smartphones(message: Message):
+    await message.answer("Не нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu())
+
+
+@router.message(F.text == "♻️ Смартфоны Б/У")
+async def cmd_smartphones_bu(message: Message):
+    uid = message.from_user.id
+    user_filters.setdefault(uid, {})["phone_cond"] = "used"
+    await message.answer("Б/У смартфоны — выберите раздел:", reply_markup=kb.smartphones_kb("used"))
+
+
 @router.message(F.text.in_(MENU_CATEGORY_MAP))
 async def cmd_menu_category(message: Message):
     category = MENU_CATEGORY_MAP[message.text]
-    if category == "Смартфоны":
-        await message.answer("Выберите состояние:", reply_markup=kb.smartphones_condition_kb())
-        return
-
     uid = message.from_user.id
     items = await db.get_items(category=category)
     if not items:
