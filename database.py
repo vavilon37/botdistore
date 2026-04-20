@@ -148,6 +148,15 @@ async def count_active_items() -> int:
             return row[0] if row else 0
 
 
+async def count_used_items() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM items WHERE active = 1 AND condition != 'Новое'"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
 # --- Избранное ---
 
 async def add_favorite(user_id: int, item_id: int):
