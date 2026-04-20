@@ -114,10 +114,7 @@ def phone_card_kb(index: int, total: int, item_id: int, is_admin: bool = False,
         buttons.append(nav)
     buttons.append([InlineKeyboardButton(text=f"{index + 1} / {total}", callback_data="noop")])
     fav_text = "❤️ В избранном" if is_fav else "🤍 В избранное"
-    buttons.append([
-        InlineKeyboardButton(text=fav_text, callback_data=f"fav:{item_id}"),
-        InlineKeyboardButton(text="📤 Поделиться", callback_data=f"share:{item_id}"),
-    ])
+    buttons.append([InlineKeyboardButton(text=fav_text, callback_data=f"fav:{item_id}")])
     if item_name:
         sub_text = "🔔 Подписан" if is_sub else "🔕 Подписаться"
         buttons.append([InlineKeyboardButton(text=sub_text, callback_data=f"sub:{item_name}")])
