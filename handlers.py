@@ -137,6 +137,16 @@ async def _get_item_photos(item: dict) -> list:
     return photos
 
 
+async def _delete_prev_card(bot, chat_id: int, uid: int):
+    data = user_filters.get(uid, {})
+    for msg_id in data.get("card_msg_ids", []):
+        try:
+            await bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+    user_filters[uid]["card_msg_ids"] = []
+
+
 async def _show_phone_card(call: CallbackQuery, index: int):
     uid = call.from_user.id
     data = user_filters.get(uid)
@@ -162,43 +172,26 @@ async def _show_phone_card(call: CallbackQuery, index: int):
     text = format_item(item)
     markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
     photos = await _get_item_photos(item)
+    photos = photos[:10]
 
-    # Удаляем дополнительные фото (2-е и далее) от предыдущей карточки
-    for msg_id in data.get("extra_photo_ids", []):
-        try:
-            await call.bot.delete_message(call.message.chat.id, msg_id)
-        except Exception:
-            pass
-    user_filters[uid]["extra_photo_ids"] = []
+    await _delete_prev_card(call.bot, call.message.chat.id, uid)
 
-    # Основное сообщение с кнопками — редактируем на месте
-    if photos:
-        try:
-            await call.message.edit_media(
-                InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML"),
-                reply_markup=markup
-            )
-        except Exception:
-            await call.message.delete()
-            sent = await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
-            user_filters[uid]["card_main_id"] = sent.message_id
+    msg_ids = []
+    if len(photos) > 1:
+        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
+        media += [InputMediaPhoto(media=p) for p in photos[1:]]
+        sent_group = await call.message.answer_media_group(media)
+        msg_ids += [m.message_id for m in sent_group]
+        nav = await call.message.answer("⬆️ Фото товара", reply_markup=markup)
+        msg_ids.append(nav.message_id)
+    elif photos:
+        sent = await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
+        msg_ids.append(sent.message_id)
     else:
-        try:
-            await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
-        except Exception:
-            await call.message.delete()
-            sent = await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
-            user_filters[uid]["card_main_id"] = sent.message_id
+        sent = await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+        msg_ids.append(sent.message_id)
 
-    # Отправляем дополнительные фото после основного
-    extra_ids = []
-    for photo in photos[1:]:
-        try:
-            sent = await call.message.answer_photo(photo)
-            extra_ids.append(sent.message_id)
-        except Exception:
-            pass
-    user_filters[uid]["extra_photo_ids"] = extra_ids
+    user_filters[uid]["card_msg_ids"] = msg_ids
 
 
 async def _send_phone_card(message, items: list, index: int = 0, is_admin: bool = False, uid: int = None):
@@ -206,21 +199,25 @@ async def _send_phone_card(message, items: list, index: int = 0, is_admin: bool 
     text = format_item(item)
     markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
     photos = await _get_item_photos(item)
+    photos = photos[:10]
 
-    extra_ids = []
-    if photos:
+    msg_ids = []
+    if len(photos) > 1:
+        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
+        media += [InputMediaPhoto(media=p) for p in photos[1:]]
+        sent_group = await message.answer_media_group(media)
+        msg_ids += [m.message_id for m in sent_group]
+        nav = await message.answer("⬆️ Фото товара", reply_markup=markup)
+        msg_ids.append(nav.message_id)
+    elif photos:
         sent = await message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
-        for photo in photos[1:]:
-            try:
-                ex = await message.answer_photo(photo)
-                extra_ids.append(ex.message_id)
-            except Exception:
-                pass
+        msg_ids.append(sent.message_id)
     else:
         sent = await message.answer(text, parse_mode="HTML", reply_markup=markup)
+        msg_ids.append(sent.message_id)
 
     if uid is not None:
-        user_filters.setdefault(uid, {})["extra_photo_ids"] = extra_ids
+        user_filters.setdefault(uid, {})["card_msg_ids"] = msg_ids
 
 
 @router.callback_query(F.data == "cat:Смартфоны")
@@ -413,15 +410,16 @@ async def cb_item(call: CallbackQuery):
     photos = await db.get_item_photos(item_id)
     if not photos and item["photo_id"]:
         photos = [item["photo_id"]]
+    photos = photos[:10]
 
     await call.message.delete()
-    if photos:
+    if len(photos) > 1:
+        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
+        media += [InputMediaPhoto(media=p) for p in photos[1:]]
+        await call.message.answer_media_group(media)
+        await call.message.answer("⬆️ Фото товара", reply_markup=kb.item_kb(item_id, is_admin))
+    elif photos:
         await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=kb.item_kb(item_id, is_admin))
-        for photo in photos[1:]:
-            try:
-                await call.message.answer_photo(photo)
-            except Exception:
-                pass
     else:
         await call.message.answer(text, parse_mode="HTML", reply_markup=kb.item_kb(item_id, is_admin))
 
