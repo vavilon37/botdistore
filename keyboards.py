@@ -151,8 +151,16 @@ def admin_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="➕ Добавить iPhone"), KeyboardButton(text="➕ Добавить товар")],
         [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="🔍 Поиск по названию")],
+        [KeyboardButton(text="📢 Рассылка")],
         [KeyboardButton(text="◀️ Выйти из админки")],
     ], resize_keyboard=True)
+
+
+def broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Отправить", callback_data="broadcast:confirm"),
+         InlineKeyboardButton(text="❌ Отмена", callback_data="broadcast:cancel")],
+    ])
 
 
 def price_filter_kb() -> InlineKeyboardMarkup:

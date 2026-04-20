@@ -33,6 +33,11 @@ async def main():
         is_admin = message.from_user.id in ADMIN_IDS
         menu = kb.admin_menu() if is_admin else kb.main_menu()
         admin_note = "\n\n🔑 Вы вошли как администратор." if is_admin else ""
+        await db.register_user(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
         used = await db.count_used_items()
         await message.answer(
             f"Привет, {name}! 👋\n\n"

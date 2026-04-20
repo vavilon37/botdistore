@@ -9,6 +9,11 @@ import keyboards as kb
 router = Router()
 
 
+class Broadcast(StatesGroup):
+    waiting_text = State()
+    confirm = State()
+
+
 class AddItem(StatesGroup):
     # iPhone wizard
     iphone_group = State()
@@ -240,6 +245,71 @@ async def _finish_add(message: Message, state: FSMContext):
                 await bot.send_message(uid, notify_text, parse_mode="HTML")
             except Exception:
                 pass
+
+
+@router.message(F.text == "📢 Рассылка")
+async def cmd_broadcast(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    total = await db.count_users()
+    await state.set_state(Broadcast.waiting_text)
+    await message.answer(
+        f"Введите текст рассылки.\n"
+        f"Получателей: <b>{total}</b> чел.\n\n"
+        f"Поддерживается HTML-форматирование: <b>жирный</b>, <i>курсив</i>, ссылки.\n"
+        f"Для отмены напишите /cancel",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Broadcast.waiting_text)
+async def broadcast_text(message: Message, state: FSMContext):
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer("Рассылка отменена.", reply_markup=kb.admin_menu())
+        return
+    await state.update_data(text=message.text)
+    await state.set_state(Broadcast.confirm)
+    await message.answer(
+        f"Предпросмотр рассылки:\n\n{message.text}\n\n"
+        f"Отправить всем пользователям?",
+        parse_mode="HTML",
+        reply_markup=kb.broadcast_confirm_kb()
+    )
+
+
+@router.callback_query(F.data == "broadcast:confirm")
+async def broadcast_confirm(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await state.clear()
+    text = data.get("text", "")
+    user_ids = await db.get_all_user_ids()
+
+    await call.message.edit_text(f"⏳ Отправляю {len(user_ids)} пользователям...")
+
+    sent = 0
+    failed = 0
+    bot: Bot = call.bot
+    for uid in user_ids:
+        try:
+            await bot.send_message(uid, text, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+
+    await call.message.answer(
+        f"✅ Рассылка завершена!\n"
+        f"Отправлено: {sent}\n"
+        f"Не доставлено: {failed}",
+        reply_markup=kb.admin_menu()
+    )
+
+
+@router.callback_query(F.data == "broadcast:cancel")
+async def broadcast_cancel(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await call.message.edit_text("Рассылка отменена.")
+    await call.message.answer("Главное меню:", reply_markup=kb.admin_menu())
 
 
 @router.message(F.text == "◀️ Выйти из админки")

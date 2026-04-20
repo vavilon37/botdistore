@@ -29,6 +29,14 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS favorites (
                 user_id INTEGER NOT NULL,
                 item_id INTEGER NOT NULL,
@@ -139,6 +147,29 @@ async def get_categories() -> list:
         ) as cursor:
             rows = await cursor.fetchall()
             return [r[0] for r in rows]
+
+
+async def register_user(user_id: int, username: str, first_name: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
+            (user_id, username or "", first_name or "")
+        )
+        await db.commit()
+
+
+async def get_all_user_ids() -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM users") as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
+
+
+async def count_users() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM users") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 async def count_active_items() -> int:
