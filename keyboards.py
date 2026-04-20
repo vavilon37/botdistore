@@ -11,7 +11,7 @@ def main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
         [KeyboardButton(text="🔍 Поиск по названию")],
-        [KeyboardButton(text="🍎 Весь прайс iPhone")],
+        [KeyboardButton(text="🍎 Рынок б/у iPhone")],
         [KeyboardButton(text="🔧 Сервис"), KeyboardButton(text="ℹ️ О боте")],
     ], resize_keyboard=True)
 

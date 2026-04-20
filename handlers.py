@@ -112,7 +112,7 @@ async def process_search(message: Message, state: FSMContext):
     )
 
 
-@router.message(F.text == "🍎 Весь прайс iPhone")
+@router.message(F.text == "🍎 Рынок б/у iPhone")
 async def cmd_iphone_pricelist(message: Message):
     import random
     items = await db.search_items("iPhone")
@@ -148,7 +148,7 @@ async def cmd_about(message: Message):
         "📱 Смартфоны — новые смартфоны\n"
         "🎧 Наушники, 🔌 Аксессуары, 📟 Планшеты, 📦 Другое\n"
         "🔍 Поиск по названию — найти конкретный товар\n"
-        "🍎 Весь прайс iPhone — все айфоны в наличии\n"
+        "🍎 Рынок б/у iPhone — все айфоны в наличии\n"
         "🔧 Сервис — ремонт техники\n\n"
         "✍️ По всем вопросам: @distore_original",
         parse_mode="HTML"
