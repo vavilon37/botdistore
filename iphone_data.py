@@ -110,9 +110,21 @@ IPHONE_MODELS = {
         "storage": ["256GB", "512GB", "1TB"],
         "colors": ["Black Titanium", "White Titanium", "Natural Titanium", "Desert Titanium"],
     },
-    "iPhone 17 Pro Max": {
+    "iPhone 17": {
+        "storage": ["256GB", "512GB"],
+        "colors": ["Black", "White", "Mist Blue", "Sage", "Lavender"],
+    },
+    "iPhone Air": {
         "storage": ["256GB", "512GB", "1TB"],
-        "colors": ["Black Titanium", "White Titanium", "Natural Titanium", "Desert Titanium"],
+        "colors": ["Space Black", "Cloud White", "Light Gold", "Sky Blue"],
+    },
+    "iPhone 17 Pro": {
+        "storage": ["256GB", "512GB", "1TB"],
+        "colors": ["Silver", "Cosmic Orange", "Deep Blue"],
+    },
+    "iPhone 17 Pro Max": {
+        "storage": ["256GB", "512GB", "1TB", "2TB"],
+        "colors": ["Silver", "Cosmic Orange", "Deep Blue"],
     },
 }
 
@@ -125,5 +137,5 @@ IPHONE_GROUPS = {
     "iPhone 14": ["iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max"],
     "iPhone 15": ["iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max"],
     "iPhone 16": ["iPhone 16", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max"],
-    "iPhone 17": ["iPhone 17 Pro Max"],
+    "iPhone 17": ["iPhone 17", "iPhone Air", "iPhone 17 Pro", "iPhone 17 Pro Max"],
 }

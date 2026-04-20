@@ -77,7 +77,10 @@ async def process_search(message: Message, state: FSMContext):
     await state.clear()
     items = await db.search_items(message.text)
     if not items:
-        await message.answer("Ничего не найдено. Попробуйте другой запрос.", reply_markup=kb.main_menu())
+        await message.answer(
+            "Ничего не найдено. Попробуйте другой запрос.\n\nНе нашли что искали? Пишите: @distore_original",
+            reply_markup=kb.main_menu()
+        )
         return
 
     uid = message.from_user.id
@@ -101,6 +104,11 @@ async def cmd_iphone_pricelist(message: Message):
         parse_mode="HTML",
         reply_markup=kb.items_list_kb(user_filters[uid]["items"])
     )
+
+
+@router.message(F.text == "🔧 Сервис")
+async def cmd_service(message: Message):
+    await message.answer("По поводу ремонта пишите: @distore_original")
 
 
 @router.message(F.text == "ℹ️ О боте")
@@ -291,14 +299,20 @@ async def cb_iphone_color(call: CallbackQuery):
         all_items = await db.search_items(f"{model} {storage}")
 
     if not all_items:
-        await call.answer("Товаров не найдено", show_alert=True)
+        await call.message.edit_text(
+            "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original",
+            reply_markup=kb.main_menu_inline()
+        )
         return
 
     all_items = [dict(i) for i in all_items]
     items = _filter_by_cond(all_items, cond)
 
     if not items:
-        await call.answer(f"Нет товаров в категории «{COND_LABEL[cond]}»", show_alert=True)
+        await call.message.edit_text(
+            f"Нет товаров в категории «{COND_LABEL[cond]}».\n\nНе нашли что искали? Пишите: @distore_original",
+            reply_markup=kb.main_menu_inline()
+        )
         return
 
     user_filters[uid]["items"] = items
@@ -496,7 +510,10 @@ async def cb_isearch(call: CallbackQuery):
 
     items = _filter_by_cond(all_items, cond)
     if not items:
-        await call.answer("Товаров не найдено", show_alert=True)
+        await call.message.edit_text(
+            "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original",
+            reply_markup=kb.main_menu_inline()
+        )
         return
 
     user_filters[uid]["items"] = items

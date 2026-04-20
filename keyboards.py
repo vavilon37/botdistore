@@ -12,8 +12,14 @@ def main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
         [KeyboardButton(text="🔍 Поиск по названию")],
         [KeyboardButton(text="🍎 Весь прайс iPhone")],
-        [KeyboardButton(text="ℹ️ О боте")],
+        [KeyboardButton(text="🔧 Сервис"), KeyboardButton(text="ℹ️ О боте")],
     ], resize_keyboard=True)
+
+
+def main_menu_inline() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")]
+    ])
 
 
 def smartphones_condition_kb() -> InlineKeyboardMarkup:
