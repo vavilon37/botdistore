@@ -32,6 +32,7 @@ def format_item(item) -> str:
     )
     if item["description"]:
         text += f"\n{item['description']}"
+    text += "\n\n✍️ Написать: @distore_original"
     return text
 
 
