@@ -1,0 +1,233 @@
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+import database as db
+import keyboards as kb
+
+router = Router()
+
+
+class AddItem(StatesGroup):
+    # iPhone wizard
+    iphone_group = State()
+    iphone_model = State()
+    iphone_storage = State()
+    iphone_color = State()
+    # common fields
+    name = State()
+    category = State()
+    condition = State()
+    price = State()
+    description = State()
+    photo = State()
+
+
+def is_admin(user_id: int) -> bool:
+    try:
+        from bot import ADMIN_IDS
+        return user_id in ADMIN_IDS
+    except Exception:
+        return False
+
+
+@router.message(F.text == "➕ Добавить товар")
+async def cmd_add_item(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(AddItem.name)
+    await message.answer("Введите название товара (или выберите категорию — для iPhone удобнее через /add_iphone):")
+
+
+@router.message(F.text == "➕ Добавить iPhone")
+async def cmd_add_iphone(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(AddItem.iphone_group)
+    await state.update_data(category="Смартфоны")
+    await message.answer("Выберите поколение iPhone:", reply_markup=kb.admin_iphone_groups_kb())
+
+
+# --- iPhone wizard callbacks ---
+
+@router.callback_query(F.data.startswith("aigrp:"))
+async def admin_iphone_group(call: CallbackQuery, state: FSMContext):
+    group = call.data.split(":", 1)[1]
+    await state.update_data(iphone_group=group)
+    await state.set_state(AddItem.iphone_model)
+    await call.message.edit_text(f"Выберите модель ({group}):", reply_markup=kb.admin_iphone_models_kb(group))
+
+
+@router.callback_query(F.data == "aiphone:manual")
+async def admin_iphone_manual(call: CallbackQuery, state: FSMContext):
+    await state.set_state(AddItem.name)
+    await call.message.edit_text("Введите название товара вручную:")
+
+
+@router.callback_query(F.data.startswith("aimodel:"))
+async def admin_iphone_model(call: CallbackQuery, state: FSMContext):
+    model = call.data.split(":", 1)[1]
+    await state.update_data(iphone_model=model)
+    await state.set_state(AddItem.iphone_storage)
+    await call.message.edit_text(f"Выберите объём памяти для {model}:", reply_markup=kb.admin_iphone_storage_kb(model))
+
+
+@router.callback_query(F.data.startswith("aistorage:"))
+async def admin_iphone_storage(call: CallbackQuery, state: FSMContext):
+    _, rest = call.data.split(":", 1)
+    model, storage = rest.split("|", 1)
+    await state.update_data(iphone_storage=storage)
+    await state.set_state(AddItem.iphone_color)
+    await call.message.edit_text(f"Выберите цвет для {model} {storage}:", reply_markup=kb.admin_iphone_colors_kb(model, storage))
+
+
+@router.callback_query(F.data.startswith("aicolor:"))
+async def admin_iphone_color(call: CallbackQuery, state: FSMContext):
+    _, rest = call.data.split(":", 1)
+    parts = rest.split("|", 2)
+    model, storage, color = parts[0], parts[1], parts[2]
+    auto_name = f"{model} {storage} {color}"
+    await state.update_data(
+        name=auto_name,
+        iphone_color=color,
+        category="Смартфоны",
+    )
+    await state.set_state(AddItem.condition)
+    await call.message.edit_text(
+        f"✅ Название: <b>{auto_name}</b>\n\nВыберите состояние:",
+        parse_mode="HTML",
+        reply_markup=kb.admin_conditions_kb()
+    )
+
+
+# --- Общий флоу добавления товара ---
+
+@router.message(AddItem.name)
+async def add_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await state.set_state(AddItem.category)
+    await message.answer("Выберите категорию:", reply_markup=kb.admin_categories_kb())
+
+
+@router.callback_query(F.data.startswith("acat:"))
+async def add_category(call: CallbackQuery, state: FSMContext):
+    category = call.data.split(":", 1)[1]
+    current_state = await state.get_state()
+
+    # Если нажали "Смартфоны" во время wizard iPhone — возврат к выбору группы
+    if category == "Смартфоны" and current_state == AddItem.iphone_model:
+        await state.set_state(AddItem.iphone_group)
+        await call.message.edit_text("Выберите поколение iPhone:", reply_markup=kb.admin_iphone_groups_kb())
+        return
+
+    await state.update_data(category=category)
+
+    # Если это Смартфоны и мы в обычном флоу — предложить iPhone wizard
+    if category == "Смартфоны":
+        await state.set_state(AddItem.iphone_group)
+        await call.message.edit_text(
+            "Выберите поколение iPhone или введите вручную:",
+            reply_markup=kb.admin_iphone_groups_kb()
+        )
+        return
+
+    await state.set_state(AddItem.condition)
+    await call.message.edit_text("Выберите состояние:", reply_markup=kb.admin_conditions_kb())
+
+
+@router.callback_query(F.data.startswith("acond:"))
+async def add_condition(call: CallbackQuery, state: FSMContext):
+    condition = call.data.split(":", 1)[1]
+    await state.update_data(condition=condition)
+    await state.set_state(AddItem.price)
+    await call.message.edit_text("Введите цену в рублях (только цифры):")
+
+
+@router.message(AddItem.price)
+async def add_price(message: Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("Пожалуйста, введите только число.")
+        return
+    await state.update_data(price=int(message.text))
+    await state.set_state(AddItem.description)
+    await message.answer("Введите описание товара (или отправьте '-' чтобы пропустить):")
+
+
+@router.message(AddItem.description)
+async def add_description(message: Message, state: FSMContext):
+    desc = message.text if message.text != "-" else ""
+    await state.update_data(description=desc, photos=[])
+    await state.set_state(AddItem.photo)
+    await message.answer(
+        "Отправьте фото товара.\n"
+        "Можно отправить несколько по одному.\n"
+        "Когда закончите — напишите <b>готово</b>.\n"
+        "Чтобы пропустить фото — напишите <b>-</b>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(AddItem.photo, F.photo)
+async def add_photo(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    data = await state.get_data()
+    photos = data.get("photos", [])
+    photos.append(photo_id)
+    await state.update_data(photos=photos)
+    await message.answer(f"📸 Фото {len(photos)} добавлено. Отправьте ещё или напишите <b>готово</b>.", parse_mode="HTML")
+
+
+@router.message(AddItem.photo, F.text.lower() == "готово")
+async def finish_photos(message: Message, state: FSMContext):
+    await _finish_add(message, state)
+
+
+@router.message(AddItem.photo, F.text == "-")
+async def skip_photo(message: Message, state: FSMContext):
+    await _finish_add(message, state)
+
+
+async def _finish_add(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photos: list = data.get("photos", [])
+    await state.clear()
+
+    first_photo = photos[0] if photos else ""
+    item_id = await db.add_item(
+        name=data["name"],
+        category=data["category"],
+        condition=data["condition"],
+        price=data["price"],
+        description=data.get("description", ""),
+        photo_id=first_photo,
+    )
+
+    if photos:
+        await db.add_item_photos(item_id, photos)
+
+    await message.answer(
+        f"✅ Товар добавлен!\n"
+        f"ID: {item_id}\n"
+        f"<b>{data['name']}</b> — {data['price']:,} ₽\n"
+        f"Категория: {data['category']}\n"
+        f"Состояние: {data['condition']}\n"
+        f"Фото: {len(photos)} шт.",
+        parse_mode="HTML",
+        reply_markup=kb.admin_menu()
+    )
+
+
+@router.message(F.text == "◀️ Выйти из админки")
+async def exit_admin(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer("Вы вышли из режима администратора.", reply_markup=kb.main_menu())
+
+
+@router.message(F.text == "/admin")
+async def cmd_admin(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("Нет доступа.")
+        return
+    await message.answer("Режим администратора активирован.", reply_markup=kb.admin_menu())
