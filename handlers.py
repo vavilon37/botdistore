@@ -129,14 +129,11 @@ def _filter_by_cond(items: list, cond: str) -> list:
 COND_LABEL = {"new": "🆕 Новые", "used": "♻️ Б/У", "all": "🔄 Все"}
 
 
-async def _delete_card_messages(bot, chat_id: int, uid: int):
-    data = user_filters.get(uid, {})
-    for msg_id in data.get("card_msg_ids", []):
-        try:
-            await bot.delete_message(chat_id, msg_id)
-        except Exception:
-            pass
-    user_filters[uid]["card_msg_ids"] = []
+async def _get_item_photos(item: dict) -> list:
+    photos = await db.get_item_photos(item["id"])
+    if not photos and item.get("photo_id"):
+        photos = [item["photo_id"]]
+    return photos
 
 
 async def _show_phone_card(call: CallbackQuery, index: int):
@@ -163,57 +160,66 @@ async def _show_phone_card(call: CallbackQuery, index: int):
 
     text = format_item(item)
     markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
+    photos = await _get_item_photos(item)
 
-    photos = await db.get_item_photos(item["id"])
-    if not photos and item.get("photo_id"):
-        photos = [item["photo_id"]]
+    # Удаляем дополнительные фото (2-е и далее) от предыдущей карточки
+    for msg_id in data.get("extra_photo_ids", []):
+        try:
+            await call.bot.delete_message(call.message.chat.id, msg_id)
+        except Exception:
+            pass
+    user_filters[uid]["extra_photo_ids"] = []
 
-    await _delete_card_messages(call.bot, call.message.chat.id, uid)
-
-    msg_ids = []
-    if len(photos) > 1:
-        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
-        media += [InputMediaPhoto(media=p) for p in photos[1:]]
-        sent = await call.message.answer_media_group(media)
-        msg_ids += [m.message_id for m in sent]
-        nav_msg = await call.message.answer("⬆️ Фото товара", reply_markup=markup)
-        msg_ids.append(nav_msg.message_id)
-    elif photos:
-        sent = await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
-        msg_ids.append(sent.message_id)
+    # Основное сообщение с кнопками — редактируем на месте
+    if photos:
+        try:
+            await call.message.edit_media(
+                InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML"),
+                reply_markup=markup
+            )
+        except Exception:
+            await call.message.delete()
+            sent = await call.message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
+            user_filters[uid]["card_main_id"] = sent.message_id
     else:
-        sent = await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
-        msg_ids.append(sent.message_id)
+        try:
+            await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        except Exception:
+            await call.message.delete()
+            sent = await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+            user_filters[uid]["card_main_id"] = sent.message_id
 
-    user_filters[uid]["card_msg_ids"] = msg_ids
+    # Отправляем дополнительные фото после основного
+    extra_ids = []
+    for photo in photos[1:]:
+        try:
+            sent = await call.message.answer_photo(photo)
+            extra_ids.append(sent.message_id)
+        except Exception:
+            pass
+    user_filters[uid]["extra_photo_ids"] = extra_ids
 
 
 async def _send_phone_card(message, items: list, index: int = 0, is_admin: bool = False, uid: int = None):
     item = items[index]
     text = format_item(item)
     markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
+    photos = await _get_item_photos(item)
 
-    photos = await db.get_item_photos(item["id"])
-    if not photos and item.get("photo_id"):
-        photos = [item["photo_id"]]
-
-    msg_ids = []
-    if len(photos) > 1:
-        media = [InputMediaPhoto(media=photos[0], caption=text, parse_mode="HTML")]
-        media += [InputMediaPhoto(media=p) for p in photos[1:]]
-        sent = await message.answer_media_group(media)
-        msg_ids += [m.message_id for m in sent]
-        nav_msg = await message.answer("⬆️ Фото товара", reply_markup=markup)
-        msg_ids.append(nav_msg.message_id)
-    elif photos:
+    extra_ids = []
+    if photos:
         sent = await message.answer_photo(photos[0], caption=text, parse_mode="HTML", reply_markup=markup)
-        msg_ids.append(sent.message_id)
+        for photo in photos[1:]:
+            try:
+                ex = await message.answer_photo(photo)
+                extra_ids.append(ex.message_id)
+            except Exception:
+                pass
     else:
         sent = await message.answer(text, parse_mode="HTML", reply_markup=markup)
-        msg_ids.append(sent.message_id)
 
     if uid is not None:
-        user_filters.setdefault(uid, {})["card_msg_ids"] = msg_ids
+        user_filters.setdefault(uid, {})["extra_photo_ids"] = extra_ids
 
 
 @router.callback_query(F.data == "cat:Смартфоны")
