@@ -1,6 +1,7 @@
 import aiosqlite
+import os
 
-DB_PATH = "shop.db"
+DB_PATH = os.path.join(os.getenv("DATA_DIR", "."), "shop.db")
 
 
 async def init_db():
