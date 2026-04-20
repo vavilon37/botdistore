@@ -1,4 +1,4 @@
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -216,6 +216,30 @@ async def _finish_add(message: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=kb.admin_menu()
     )
+
+    # Уведомляем подписчиков
+    name = data["name"]
+    subscribers = set()
+    words = name.split()
+    for i in range(len(words)):
+        for j in range(i + 1, len(words) + 1):
+            phrase = " ".join(words[i:j])
+            for uid in await db.get_subscribers(phrase):
+                subscribers.add(uid)
+
+    if subscribers:
+        notify_text = (
+            f"🔔 Появился новый товар по вашей подписке!\n\n"
+            f"<b>{name}</b> — {data['price']:,} ₽\n"
+            f"Состояние: {data['condition']}\n\n"
+            f"✍️ Написать: @distore_original"
+        )
+        bot: Bot = message.bot
+        for uid in subscribers:
+            try:
+                await bot.send_message(uid, notify_text, parse_mode="HTML")
+            except Exception:
+                pass
 
 
 @router.message(F.text == "◀️ Выйти из админки")

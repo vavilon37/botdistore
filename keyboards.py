@@ -10,8 +10,9 @@ def main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="♻️ Смартфоны Б/У")],
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
-        [KeyboardButton(text="🔍 Поиск по названию")],
+        [KeyboardButton(text="🔍 Поиск по названию"), KeyboardButton(text="💰 Фильтр по цене")],
         [KeyboardButton(text="🍎 Рынок б/у iPhone")],
+        [KeyboardButton(text="❤️ Избранное"), KeyboardButton(text="🔔 Подписки")],
         [KeyboardButton(text="🔧 Сервис"), KeyboardButton(text="ℹ️ О боте")],
     ], resize_keyboard=True)
 
@@ -100,7 +101,8 @@ def item_kb(item_id: int, is_admin: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def phone_card_kb(index: int, total: int, item_id: int, is_admin: bool = False) -> InlineKeyboardMarkup:
+def phone_card_kb(index: int, total: int, item_id: int, is_admin: bool = False,
+                  is_fav: bool = False, views: int = 0, item_name: str = "", is_sub: bool = False) -> InlineKeyboardMarkup:
     nav = []
     if index > 0:
         nav.append(InlineKeyboardButton(text="◀️", callback_data=f"pcard:{index - 1}"))
@@ -111,6 +113,16 @@ def phone_card_kb(index: int, total: int, item_id: int, is_admin: bool = False) 
     if nav:
         buttons.append(nav)
     buttons.append([InlineKeyboardButton(text=f"{index + 1} / {total}", callback_data="noop")])
+    fav_text = "❤️ В избранном" if is_fav else "🤍 В избранное"
+    buttons.append([
+        InlineKeyboardButton(text=fav_text, callback_data=f"fav:{item_id}"),
+        InlineKeyboardButton(text="📤 Поделиться", callback_data=f"share:{item_id}"),
+    ])
+    if item_name:
+        sub_text = "🔔 Подписан" if is_sub else "🔕 Подписаться"
+        buttons.append([InlineKeyboardButton(text=sub_text, callback_data=f"sub:{item_name}")])
+    if views:
+        buttons.append([InlineKeyboardButton(text=f"👁 {views} просмотров", callback_data="noop")])
     buttons.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")])
     if is_admin:
         buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"del:{item_id}")])
@@ -147,6 +159,24 @@ def admin_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="🔍 Поиск по названию")],
         [KeyboardButton(text="◀️ Выйти из админки")],
     ], resize_keyboard=True)
+
+
+def price_filter_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="до 10 000 ₽", callback_data="price:0:10000")],
+        [InlineKeyboardButton(text="10 000 — 30 000 ₽", callback_data="price:10000:30000")],
+        [InlineKeyboardButton(text="30 000 — 60 000 ₽", callback_data="price:30000:60000")],
+        [InlineKeyboardButton(text="от 60 000 ₽", callback_data="price:60000:0")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
+    ])
+
+
+def subscriptions_kb(subs: list[str]) -> InlineKeyboardMarkup:
+    buttons = []
+    for model in subs:
+        buttons.append([InlineKeyboardButton(text=f"❌ {model}", callback_data=f"unsub:{model}")])
+    buttons.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def admin_categories_kb() -> InlineKeyboardMarkup:

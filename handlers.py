@@ -209,8 +209,13 @@ async def _show_phone_card(call: CallbackQuery, index: int):
     except Exception:
         pass
 
+    await db.increment_views(item["id"])
+    is_fav = await db.is_favorite(uid, item["id"])
+    views = await db.get_views(item["id"])
+    is_sub = await db.is_subscribed(uid, item["name"])
+
     text = format_item(item)
-    markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
+    markup = kb.phone_card_kb(index, len(items), item["id"], is_admin, is_fav, views, item["name"], is_sub)
     photos = await _get_item_photos(item)
     photos = photos[:10]
 
@@ -236,8 +241,14 @@ async def _show_phone_card(call: CallbackQuery, index: int):
 
 async def _send_phone_card(message, items: list, index: int = 0, is_admin: bool = False, uid: int = None):
     item = items[index]
+
+    await db.increment_views(item["id"])
+    is_fav = await db.is_favorite(uid, item["id"]) if uid else False
+    views = await db.get_views(item["id"])
+    is_sub = await db.is_subscribed(uid, item["name"]) if uid else False
+
     text = format_item(item)
-    markup = kb.phone_card_kb(index, len(items), item["id"], is_admin)
+    markup = kb.phone_card_kb(index, len(items), item["id"], is_admin, is_fav, views, item["name"], is_sub)
     photos = await _get_item_photos(item)
     photos = photos[:10]
 
@@ -565,3 +576,188 @@ async def cb_delete_item(call: CallbackQuery):
     await db.delete_item(item_id)
     await call.answer("Товар удалён ✅")
     await call.message.delete()
+
+
+# --- Избранное ---
+
+@router.message(F.text == "❤️ Избранное")
+async def cmd_favorites(message: Message):
+    uid = message.from_user.id
+    items = await db.get_favorites(uid)
+    if not items:
+        await message.answer("У вас пока нет избранных товаров.", reply_markup=kb.main_menu())
+        return
+
+    items = [dict(i) for i in items]
+    user_filters[uid] = {"items": items, "phone_index": 0, "card_msg_ids": []}
+
+    is_admin = False
+    try:
+        from bot import ADMIN_IDS
+        is_admin = uid in ADMIN_IDS
+    except Exception:
+        pass
+
+    await _send_phone_card(message, items, 0, is_admin, uid)
+
+
+@router.callback_query(F.data.startswith("fav:"))
+async def cb_toggle_favorite(call: CallbackQuery):
+    uid = call.from_user.id
+    item_id = int(call.data.split(":")[1])
+
+    if await db.is_favorite(uid, item_id):
+        await db.remove_favorite(uid, item_id)
+        await call.answer("Убрано из избранного")
+    else:
+        await db.add_favorite(uid, item_id)
+        await call.answer("Добавлено в избранное ❤️")
+
+    data = user_filters.get(uid, {})
+    index = data.get("phone_index", 0)
+    items = data.get("items", [])
+    if not items:
+        return
+
+    is_admin = False
+    try:
+        from bot import ADMIN_IDS
+        is_admin = uid in ADMIN_IDS
+    except Exception:
+        pass
+
+    is_fav = await db.is_favorite(uid, item_id)
+    views = await db.get_views(item_id)
+    markup = kb.phone_card_kb(index, len(items), item_id, is_admin, is_fav, views)
+
+    try:
+        await call.message.edit_reply_markup(reply_markup=markup)
+    except TelegramBadRequest:
+        pass
+
+
+# --- Поделиться ---
+
+@router.callback_query(F.data.startswith("share:"))
+async def cb_share(call: CallbackQuery):
+    item_id = int(call.data.split(":")[1])
+    item = await db.get_item(item_id)
+    if not item:
+        await call.answer("Товар не найден", show_alert=True)
+        return
+
+    item = dict(item)
+    text = (
+        f"🛍 <b>{item['name']}</b>\n"
+        f"💰 <b>{item['price']:,} ₽</b>\n"
+        f"📦 {item['condition']}\n"
+    )
+    if item.get("description"):
+        text += f"\n{item['description']}\n"
+    text += "\n✍️ Купить: @distore_original"
+
+    await call.message.answer(text, parse_mode="HTML")
+    await call.answer()
+
+
+# --- Подписки ---
+
+@router.message(F.text == "🔔 Подписки")
+async def cmd_subscriptions(message: Message):
+    uid = message.from_user.id
+    subs = await db.get_user_subscriptions(uid)
+    if not subs:
+        await message.answer(
+            "У вас нет активных подписок.\n\n"
+            "Подписаться на модель можно из карточки товара — "
+            "бот уведомит когда появится новый товар с этой моделью.",
+            reply_markup=kb.main_menu()
+        )
+        return
+    await message.answer(
+        f"Ваши подписки ({len(subs)}):\nНажмите ❌ чтобы отписаться:",
+        reply_markup=kb.subscriptions_kb(subs)
+    )
+
+
+@router.callback_query(F.data.startswith("sub:"))
+async def cb_subscribe(call: CallbackQuery):
+    uid = call.from_user.id
+    model = call.data.split(":", 1)[1]
+
+    if await db.is_subscribed(uid, model):
+        await db.remove_subscription(uid, model)
+        await call.answer(f"Отписались от «{model}»")
+    else:
+        await db.add_subscription(uid, model)
+        await call.answer(f"Подписались на «{model}» 🔔")
+
+    data = user_filters.get(uid, {})
+    index = data.get("phone_index", 0)
+    items = data.get("items", [])
+    if not items:
+        return
+
+    item = items[index]
+    is_admin = False
+    try:
+        from bot import ADMIN_IDS
+        is_admin = uid in ADMIN_IDS
+    except Exception:
+        pass
+
+    is_fav = await db.is_favorite(uid, item["id"])
+    views = await db.get_views(item["id"])
+    is_sub = await db.is_subscribed(uid, model)
+    markup = kb.phone_card_kb(index, len(items), item["id"], is_admin, is_fav, views, model, is_sub)
+
+    try:
+        await call.message.edit_reply_markup(reply_markup=markup)
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(F.data.startswith("unsub:"))
+async def cb_unsubscribe(call: CallbackQuery):
+    model = call.data.split(":", 1)[1]
+    await db.remove_subscription(call.from_user.id, model)
+    await call.answer(f"Отписались от {model}")
+    subs = await db.get_user_subscriptions(call.from_user.id)
+    if not subs:
+        await safe_edit(call, "Подписок больше нет.", reply_markup=kb.main_menu_inline())
+    else:
+        await safe_edit(call, f"Ваши подписки ({len(subs)}):\nНажмите ❌ чтобы отписаться:", reply_markup=kb.subscriptions_kb(subs))
+
+
+# --- Фильтр по цене ---
+
+@router.message(F.text == "💰 Фильтр по цене")
+async def cmd_price_filter(message: Message):
+    await message.answer("Выберите ценовой диапазон:", reply_markup=kb.price_filter_kb())
+
+
+@router.callback_query(F.data.startswith("price:"))
+async def cb_price_filter(call: CallbackQuery):
+    _, min_p, max_p = call.data.split(":")
+    min_price = int(min_p) or None
+    max_price = int(max_p) or None
+
+    items = await db.get_items(min_price=min_price, max_price=max_price)
+    uid = call.from_user.id
+
+    if not items:
+        await safe_edit(call, "Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
+        return
+
+    items = [dict(i) for i in items]
+    user_filters[uid] = {"items": items, "page": 0}
+
+    label = call.message.reply_markup.inline_keyboard
+    price_text = ""
+    for row in label:
+        for btn in row:
+            if btn.callback_data == call.data:
+                price_text = btn.text
+                break
+
+    await safe_edit(call, f"💰 {price_text} — {len(items)} товаров:", reply_markup=kb.items_list_kb(items))

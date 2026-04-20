@@ -33,10 +33,12 @@ async def main():
         is_admin = message.from_user.id in ADMIN_IDS
         menu = kb.admin_menu() if is_admin else kb.main_menu()
         admin_note = "\n\n🔑 Вы вошли как администратор." if is_admin else ""
+        total = await db.count_active_items()
         await message.answer(
             f"Привет, {name}! 👋\n\n"
             f"Добро пожаловать в магазин техники.{admin_note}\n\n"
-            f"Выберите раздел:",
+            f"Сейчас в наличии <b>{total}</b> товаров. Выберите раздел:",
+            parse_mode="HTML",
             reply_markup=menu
         )
 

@@ -28,6 +28,27 @@ async def init_db():
                 FOREIGN KEY (item_id) REFERENCES items(id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS favorites (
+                user_id INTEGER NOT NULL,
+                item_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, item_id)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER NOT NULL,
+                model TEXT NOT NULL,
+                PRIMARY KEY (user_id, model)
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS item_views (
+                item_id INTEGER NOT NULL PRIMARY KEY,
+                views INTEGER DEFAULT 0
+            )
+        """)
         await db.commit()
 
 
@@ -118,3 +139,117 @@ async def get_categories() -> list:
         ) as cursor:
             rows = await cursor.fetchall()
             return [r[0] for r in rows]
+
+
+async def count_active_items() -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM items WHERE active = 1") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+# --- Избранное ---
+
+async def add_favorite(user_id: int, item_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO favorites (user_id, item_id) VALUES (?, ?)",
+            (user_id, item_id)
+        )
+        await db.commit()
+
+
+async def remove_favorite(user_id: int, item_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM favorites WHERE user_id = ? AND item_id = ?",
+            (user_id, item_id)
+        )
+        await db.commit()
+
+
+async def is_favorite(user_id: int, item_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT 1 FROM favorites WHERE user_id = ? AND item_id = ?",
+            (user_id, item_id)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+
+async def get_favorites(user_id: int) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT i.* FROM items i JOIN favorites f ON i.id = f.item_id "
+            "WHERE f.user_id = ? AND i.active = 1 ORDER BY f.created_at DESC",
+            (user_id,)
+        ) as cursor:
+            return await cursor.fetchall()
+
+
+# --- Подписки на модели ---
+
+async def add_subscription(user_id: int, model: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO subscriptions (user_id, model) VALUES (?, ?)",
+            (user_id, model)
+        )
+        await db.commit()
+
+
+async def remove_subscription(user_id: int, model: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM subscriptions WHERE user_id = ? AND model = ?",
+            (user_id, model)
+        )
+        await db.commit()
+
+
+async def is_subscribed(user_id: int, model: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT 1 FROM subscriptions WHERE user_id = ? AND model = ?", (user_id, model)
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+
+async def get_subscribers(model: str) -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id FROM subscriptions WHERE model = ?", (model,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
+
+
+async def get_user_subscriptions(user_id: int) -> list[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT model FROM subscriptions WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
+
+
+# --- Просмотры ---
+
+async def increment_views(item_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO item_views (item_id, views) VALUES (?, 1) "
+            "ON CONFLICT(item_id) DO UPDATE SET views = views + 1",
+            (item_id,)
+        )
+        await db.commit()
+
+
+async def get_views(item_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT views FROM item_views WHERE item_id = ?", (item_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
