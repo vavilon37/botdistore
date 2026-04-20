@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InputMediaPhoto
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramBadRequest
 
 import database as db
 import keyboards as kb
@@ -10,6 +11,20 @@ router = Router()
 
 # Store filter state per user in memory
 user_filters: dict = {}
+
+
+async def safe_edit(call: CallbackQuery, text: str, **kwargs):
+    try:
+        await call.message.edit_text(text, **kwargs)
+    except TelegramBadRequest:
+        await call.answer()
+
+
+async def safe_edit_markup(call: CallbackQuery, **kwargs):
+    try:
+        await call.message.edit_reply_markup(**kwargs)
+    except TelegramBadRequest:
+        await call.answer()
 
 
 class SearchState(StatesGroup):
@@ -230,14 +245,14 @@ async def _send_phone_card(message, items: list, index: int = 0, is_admin: bool 
 
 @router.callback_query(F.data == "cat:Смартфоны")
 async def cb_smartphones(call: CallbackQuery):
-    await call.message.edit_text("Выберите состояние:", reply_markup=kb.smartphones_condition_kb())
+    await safe_edit(call, "Выберите состояние:", reply_markup=kb.smartphones_condition_kb())
 
 
 @router.callback_query(F.data.startswith("scond:"))
 async def cb_smartphones_cond(call: CallbackQuery):
     cond = call.data.split(":", 1)[1]
     label = COND_LABEL.get(cond, "")
-    await call.message.edit_text(f"{label} смартфоны — выберите раздел:", reply_markup=kb.smartphones_kb(cond))
+    await safe_edit(call, f"{label} смартфоны — выберите раздел:", reply_markup=kb.smartphones_kb(cond))
 
 
 @router.callback_query(F.data.startswith("scat:iphone"))
@@ -245,7 +260,7 @@ async def cb_iphone_groups(call: CallbackQuery):
     cond = call.data.split("|", 1)[1] if "|" in call.data else "all"
     user_filters[call.from_user.id] = user_filters.get(call.from_user.id, {})
     user_filters[call.from_user.id]["phone_cond"] = cond
-    await call.message.edit_text("Выберите поколение iPhone:", reply_markup=kb.iphone_groups_kb(cond))
+    await safe_edit(call, "Выберите поколение iPhone:", reply_markup=kb.iphone_groups_kb(cond))
 
 
 @router.callback_query(F.data.startswith("igrp:"))
@@ -256,13 +271,13 @@ async def cb_iphone_group(call: CallbackQuery):
     user_filters[uid].pop("iphone_model", None)
     user_filters[uid].pop("iphone_storage", None)
     cond = user_filters[uid].get("phone_cond", "all")
-    await call.message.edit_text(f"Выберите модель ({group}):", reply_markup=kb.iphone_models_kb(group, cond))
+    await safe_edit(call, f"Выберите модель ({group}):", reply_markup=kb.iphone_models_kb(group, cond))
 
 
 @router.callback_query(F.data.startswith("igrp_back:"))
 async def cb_igrp_back(call: CallbackQuery):
     cond = call.data.split(":", 1)[1]
-    await call.message.edit_text("Выберите поколение iPhone:", reply_markup=kb.iphone_groups_kb(cond))
+    await safe_edit(call, "Выберите поколение iPhone:", reply_markup=kb.iphone_groups_kb(cond))
 
 
 @router.callback_query(F.data.startswith("imodel:"))
@@ -272,7 +287,7 @@ async def cb_iphone_model(call: CallbackQuery):
     user_filters.setdefault(uid, {})["iphone_model"] = model
     user_filters[uid].pop("iphone_storage", None)
     cond = user_filters[uid].get("phone_cond", "all")
-    await call.message.edit_text(f"Выберите память для {model}:", reply_markup=kb.iphone_storage_kb(model, cond))
+    await safe_edit(call, f"Выберите память для {model}:", reply_markup=kb.iphone_storage_kb(model, cond))
 
 
 @router.callback_query(F.data.startswith("istorage:"))
@@ -282,7 +297,7 @@ async def cb_iphone_storage(call: CallbackQuery):
     uid = call.from_user.id
     user_filters.setdefault(uid, {})["iphone_storage"] = storage
     cond = user_filters[uid].get("phone_cond", "all")
-    await call.message.edit_text(f"Выберите цвет {model} {storage}:", reply_markup=kb.iphone_colors_kb(model, storage, cond))
+    await safe_edit(call, f"Выберите цвет {model} {storage}:", reply_markup=kb.iphone_colors_kb(model, storage, cond))
 
 
 @router.callback_query(F.data.startswith("icolor:"))
@@ -299,20 +314,14 @@ async def cb_iphone_color(call: CallbackQuery):
         all_items = await db.search_items(f"{model} {storage}")
 
     if not all_items:
-        await call.message.edit_text(
-            "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original",
-            reply_markup=kb.main_menu_inline()
-        )
+        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
         return
 
     all_items = [dict(i) for i in all_items]
     items = _filter_by_cond(all_items, cond)
 
     if not items:
-        await call.message.edit_text(
-            f"Нет товаров в категории «{COND_LABEL[cond]}».\n\nНе нашли что искали? Пишите: @distore_original",
-            reply_markup=kb.main_menu_inline()
-        )
+        await safe_edit(call, f"Нет товаров в категории «{COND_LABEL[cond]}».\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
         return
 
     user_filters[uid]["items"] = items
@@ -357,7 +366,7 @@ async def cb_smartphones_other(call: CallbackQuery):
 
 @router.callback_query(F.data == "back:categories")
 async def cb_back_categories(call: CallbackQuery):
-    await call.message.edit_text("Выберите категорию:", reply_markup=kb.categories_kb())
+    await safe_edit(call, "Выберите категорию:", reply_markup=kb.categories_kb())
 
 
 @router.callback_query(F.data.startswith("cat:"))
@@ -374,10 +383,7 @@ async def cb_category(call: CallbackQuery):
         return
 
     user_filters[uid] = {"items": [dict(i) for i in items], "page": 0, "category": category}
-    await call.message.edit_text(
-        f"{'Все товары' if category == 'all' else category} — {len(items)} шт.:",
-        reply_markup=kb.items_list_kb(user_filters[uid]["items"])
-    )
+    await safe_edit(call, f"{'Все товары' if category == 'all' else category} — {len(items)} шт.:", reply_markup=kb.items_list_kb(user_filters[uid]["items"]))
 
 
 @router.callback_query(F.data.startswith("cond:"))
@@ -399,10 +405,7 @@ async def cb_condition(call: CallbackQuery):
         return
 
     user_filters[uid] = {"items": [dict(i) for i in items], "page": 0}
-    await call.message.edit_text(
-        f"Найдено {len(items)} товаров:",
-        reply_markup=kb.items_list_kb(user_filters[uid]["items"])
-    )
+    await safe_edit(call, f"Найдено {len(items)} товаров:", reply_markup=kb.items_list_kb(user_filters[uid]["items"]))
 
 
 @router.callback_query(F.data.startswith("item:"))
@@ -448,7 +451,7 @@ async def cb_page(call: CallbackQuery):
         return
 
     user_filters[uid]["page"] = page
-    await call.message.edit_reply_markup(reply_markup=kb.items_list_kb(data["items"], page))
+    await safe_edit_markup(call, reply_markup=kb.items_list_kb(data["items"], page))
 
 
 @router.callback_query(F.data == "back:catalog")
@@ -459,13 +462,10 @@ async def cb_back_catalog(call: CallbackQuery):
     items = data.get("items", []) if data else []
 
     if not items:
-        await call.message.edit_text("Каталог пуст.", reply_markup=kb.categories_kb())
+        await safe_edit(call, "Каталог пуст.", reply_markup=kb.categories_kb())
         return
 
-    await call.message.edit_text(
-        f"Найдено {len(items)} товаров:",
-        reply_markup=kb.items_list_kb(items, page)
-    )
+    await safe_edit(call, f"Найдено {len(items)} товаров:", reply_markup=kb.items_list_kb(items, page))
 
 
 @router.callback_query(F.data == "back:main")
@@ -510,10 +510,7 @@ async def cb_isearch(call: CallbackQuery):
 
     items = _filter_by_cond(all_items, cond)
     if not items:
-        await call.message.edit_text(
-            "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original",
-            reply_markup=kb.main_menu_inline()
-        )
+        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
         return
 
     user_filters[uid]["items"] = items
