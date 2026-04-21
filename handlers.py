@@ -119,12 +119,15 @@ async def process_search(message: Message, state: FSMContext):
 @router.message(F.text == "🍎 Рынок б/у iPhone")
 async def cmd_iphone_pricelist(message: Message):
     import random
-    items = await db.search_items("iPhone")
+    all_phones = await db.get_items(category="Смартфоны")
+    items = [dict(i) for i in all_phones
+             if dict(i)["condition"] in USED_CONDITIONS
+             and "iphone" in dict(i)["name"].lower()]
     if not items:
         await message.answer("Товаров iPhone не найдено.", reply_markup=kb.main_menu())
         return
     uid = message.from_user.id
-    shuffled = [dict(i) for i in items]
+    shuffled = items
     random.shuffle(shuffled)
     user_filters[uid] = {"items": shuffled, "phone_index": 0, "card_msg_ids": []}
 
