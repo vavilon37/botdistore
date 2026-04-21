@@ -998,6 +998,16 @@ def _price_label(min_price, max_price) -> str:
     return "любая цена"
 
 
+async def _delete_pf_list(bot, chat_id: int, uid: int):
+    list_msg_id = user_filters.get(uid, {}).get("pf_list_id")
+    if list_msg_id:
+        try:
+            await bot.delete_message(chat_id, list_msg_id)
+        except Exception:
+            pass
+        user_filters[uid]["pf_list_id"] = None
+
+
 async def _show_price_results(target, uid: int, items: list, min_price, max_price,
                                category: str, sort: str, label: str, is_message=False):
     if not items:
@@ -1035,7 +1045,7 @@ async def _show_price_results(target, uid: int, items: list, min_price, max_pric
         user_filters[uid]["pf_list_id"] = list_msg.message_id
 
 
-@router.message(F.text == "💰 Фильтр по цене")
+@router.message(F.text.in_({"💰 Фильтр по цене", "💰 Фильтр"}))
 async def cmd_price_filter(message: Message):
     await message.answer("Выберите категорию:", reply_markup=kb.price_filter_category_kb())
 
@@ -1138,24 +1148,11 @@ async def cb_price_sort(call: CallbackQuery):
     user_filters[uid]["items"] = items
     user_filters[uid]["pf_sort"] = sort
 
+    await _delete_pf_list(call.bot, call.message.chat.id, uid)
     await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, sort, label))
     await call.answer()
-
-    # обновляем список товаров
-    list_msg_id = user_filters[uid].get("pf_list_id")
-    if list_msg_id:
-        try:
-            await call.bot.edit_message_reply_markup(
-                chat_id=call.message.chat.id,
-                message_id=list_msg_id,
-                reply_markup=kb.items_list_kb(items)
-            )
-        except Exception:
-            msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
-            user_filters[uid]["pf_list_id"] = msg.message_id
-    else:
-        msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
-        user_filters[uid]["pf_list_id"] = msg.message_id
+    msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+    user_filters[uid]["pf_list_id"] = msg.message_id
 
 
 @router.callback_query(F.data.startswith("pmodel_list:"))
@@ -1239,6 +1236,7 @@ async def cb_pmodel_select(call: CallbackQuery):
     user_filters[uid]["items"] = filtered
     user_filters[uid]["pf_sort"] = "name"
 
+    await _delete_pf_list(call.bot, call.message.chat.id, uid)
     await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, "name", label))
     msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(filtered))
     user_filters[uid]["pf_list_id"] = msg.message_id
