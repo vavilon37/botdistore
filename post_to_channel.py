@@ -52,7 +52,7 @@ AirPods Max — Lightning и USB-C (все цвета)
 KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="✍️ Написать", url="https://t.me/idistoreman"),
-        InlineKeyboardButton(text="🤖 Каталог", url="https://t.me/idistor_bot"),
+        InlineKeyboardButton(text="🤖 Каталог", url="https://t.me/idistore_bot"),
     ]
 ])
 
