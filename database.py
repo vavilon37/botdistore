@@ -92,7 +92,8 @@ async def get_item_photos(item_id: int) -> list[str]:
 
 
 async def get_items(category: str = None, condition: str = None,
-                    min_price: int = None, max_price: int = None) -> list:
+                    min_price: int = None, max_price: int = None,
+                    sort: str = "date") -> list:
     query = "SELECT * FROM items WHERE active = 1"
     params = []
 
@@ -109,12 +110,37 @@ async def get_items(category: str = None, condition: str = None,
         query += " AND price <= ?"
         params.append(max_price)
 
-    query += " ORDER BY created_at DESC"
+    if sort == "price_asc":
+        query += " ORDER BY price ASC"
+    elif sort == "price_desc":
+        query += " ORDER BY price DESC"
+    elif sort == "name":
+        query += " ORDER BY name ASC"
+    else:
+        query += " ORDER BY created_at DESC"
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(query, params) as cursor:
             return await cursor.fetchall()
+
+
+async def get_price_range(category: str = None, min_price: int = None, max_price: int = None) -> tuple:
+    query = "SELECT MIN(price), MAX(price) FROM items WHERE active = 1"
+    params = []
+    if category:
+        query += " AND category = ?"
+        params.append(category)
+    if min_price is not None:
+        query += " AND price >= ?"
+        params.append(min_price)
+    if max_price is not None:
+        query += " AND price <= ?"
+        params.append(max_price)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(query, params) as cursor:
+            row = await cursor.fetchone()
+            return (row[0] or 0, row[1] or 0)
 
 
 async def search_items(query_text: str) -> list:

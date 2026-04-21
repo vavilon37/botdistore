@@ -163,18 +163,56 @@ def broadcast_confirm_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def price_filter_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="до 5 000 ₽", callback_data="price:0:5000")],
-        [InlineKeyboardButton(text="5 000 — 10 000 ₽", callback_data="price:5000:10000")],
-        [InlineKeyboardButton(text="10 000 — 20 000 ₽", callback_data="price:10000:20000")],
-        [InlineKeyboardButton(text="20 000 — 35 000 ₽", callback_data="price:20000:35000")],
-        [InlineKeyboardButton(text="35 000 — 55 000 ₽", callback_data="price:35000:55000")],
-        [InlineKeyboardButton(text="55 000 — 80 000 ₽", callback_data="price:55000:80000")],
-        [InlineKeyboardButton(text="от 80 000 ₽", callback_data="price:80000:0")],
-        [InlineKeyboardButton(text="✏️ Ввести свой диапазон", callback_data="price:custom")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
-    ])
+FILTER_CATEGORIES = [
+    ("📱 Смартфоны", "Смартфоны"),
+    ("📟 Планшеты", "Планшеты"),
+    ("🖥 Маки", "Ноутбуки"),
+    ("🎧 Наушники", "Наушники"),
+    ("🔌 Аксессуары", "Аксессуары"),
+    ("🔄 Все категории", "all"),
+]
+
+PRICE_RANGES = [
+    ("до 5 000 ₽", 0, 5000),
+    ("5 000 — 10 000 ₽", 5000, 10000),
+    ("10 000 — 20 000 ₽", 10000, 20000),
+    ("20 000 — 35 000 ₽", 20000, 35000),
+    ("35 000 — 55 000 ₽", 35000, 55000),
+    ("55 000 — 80 000 ₽", 55000, 80000),
+    ("от 80 000 ₽", 80000, 0),
+]
+
+
+def price_filter_category_kb() -> InlineKeyboardMarkup:
+    buttons = [[InlineKeyboardButton(text=label, callback_data=f"pf_cat:{cat}")]
+               for label, cat in FILTER_CATEGORIES]
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def price_filter_kb(category: str = "all") -> InlineKeyboardMarkup:
+    buttons = [[InlineKeyboardButton(text=label, callback_data=f"price:{mn}:{mx}:{category}")]
+               for label, mn, mx in PRICE_RANGES]
+    buttons.append([InlineKeyboardButton(text="✏️ Ввести свой диапазон", callback_data=f"price:custom:{category}")])
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="pf_back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def price_sort_kb(items_count: int, min_p: int, max_p: int, category: str,
+                  sort: str, label: str) -> InlineKeyboardMarkup:
+    sorts = [
+        ("💰 Дешевле", "price_asc"),
+        ("💎 Дороже", "price_desc"),
+        ("🏷 По модели", "name"),
+    ]
+    sort_buttons = []
+    for s_label, s_key in sorts:
+        text = f"✅ {s_label}" if sort == s_key else s_label
+        sort_buttons.append(InlineKeyboardButton(text=text, callback_data=f"psort:{s_key}:{category}:{label}"))
+    buttons = [sort_buttons]
+    buttons.append([InlineKeyboardButton(text="🔄 Изменить фильтр", callback_data=f"pf_cat:{category}" if category != "all" else "pf_back")])
+    buttons.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def subscriptions_kb(subs: list[str]) -> InlineKeyboardMarkup:

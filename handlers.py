@@ -988,20 +988,81 @@ async def cb_unsubscribe(call: CallbackQuery):
 
 # --- Фильтр по цене ---
 
+def _price_label(min_price, max_price) -> str:
+    if min_price and max_price:
+        return f"{min_price:,} — {max_price:,} ₽"
+    elif max_price:
+        return f"до {max_price:,} ₽"
+    elif min_price:
+        return f"от {min_price:,} ₽"
+    return "любая цена"
+
+
+async def _show_price_results(target, uid: int, items: list, min_price, max_price,
+                               category: str, sort: str, label: str, is_message=False):
+    if not items:
+        text = f"Товаров в диапазоне «{label}» нет.\n\nНе нашли что искали? Пишите: @idistoreman"
+        markup = kb.main_menu_inline()
+        if is_message:
+            await target.answer(text, reply_markup=markup)
+        else:
+            await safe_edit(target, text, reply_markup=markup)
+        return
+
+    actual_min = min(i["price"] for i in items)
+    actual_max = max(i["price"] for i in items)
+    cat_label = "" if category == "all" else f" · {category}"
+    sort_labels = {"price_asc": "💰 дешевле", "price_desc": "💎 дороже", "name": "🏷 по модели"}
+    sort_label = sort_labels.get(sort, "")
+
+    text = (
+        f"🔍 <b>{label}{cat_label}</b>\n"
+        f"Найдено: <b>{len(items)}</b> шт. · {actual_min:,} — {actual_max:,} ₽\n"
+        f"Сортировка: {sort_label}"
+    )
+
+    user_filters[uid] = {"items": items, "page": 0, "pf_min": min_price, "pf_max": max_price,
+                         "pf_cat": category, "pf_sort": sort, "pf_label": label}
+    markup = kb.price_sort_kb(len(items), actual_min, actual_max, category, sort, label)
+
+    if is_message:
+        await target.answer(text, parse_mode="HTML", reply_markup=markup)
+        await target.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+    else:
+        await safe_edit(target, text, parse_mode="HTML", reply_markup=markup)
+        await target.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+
+
 @router.message(F.text == "💰 Фильтр по цене")
 async def cmd_price_filter(message: Message):
-    await message.answer("Выберите ценовой диапазон:", reply_markup=kb.price_filter_kb())
+    await message.answer("Выберите категорию:", reply_markup=kb.price_filter_category_kb())
 
 
-@router.callback_query(F.data == "price:custom")
+@router.callback_query(F.data == "pf_back")
+async def cb_pf_back(call: CallbackQuery):
+    await safe_edit(call, "Выберите категорию:", reply_markup=kb.price_filter_category_kb())
+
+
+@router.callback_query(F.data.startswith("pf_cat:"))
+async def cb_pf_category(call: CallbackQuery):
+    category = call.data.split(":", 1)[1]
+    await safe_edit(call, "Выберите ценовой диапазон:", reply_markup=kb.price_filter_kb(category))
+
+
+@router.callback_query(F.data.startswith("price:custom:"))
 async def cb_price_custom(call: CallbackQuery, state: FSMContext):
+    category = call.data.split(":", 2)[2]
+    await state.update_data(pf_category=category)
     await state.set_state(PriceState.waiting_range)
-    await safe_edit(call, "Введите диапазон цен в формате:\n<b>10000-50000</b>\nили просто одно число — до этой суммы.", parse_mode="HTML")
+    await safe_edit(call, "Введите диапазон цен:\n<b>10000-50000</b>\nили одно число — до этой суммы.", parse_mode="HTML")
 
 
 @router.message(PriceState.waiting_range)
 async def process_price_range(message: Message, state: FSMContext):
+    data = await state.get_data()
+    category = data.get("pf_category", "all")
     await state.clear()
+
     text = message.text.strip().replace(" ", "").replace(",", "")
     min_price = None
     max_price = None
@@ -1020,42 +1081,40 @@ async def process_price_range(message: Message, state: FSMContext):
         await message.answer("Неверный формат. Пример: 15000-40000 или просто 30000", reply_markup=kb.main_menu())
         return
 
-    items = await db.get_items(min_price=min_price, max_price=max_price)
+    cat = category if category != "all" else None
+    items = [dict(i) for i in await db.get_items(category=cat, min_price=min_price, max_price=max_price, sort="price_asc")]
+    label = _price_label(min_price, max_price)
     uid = message.from_user.id
-
-    if not items:
-        await message.answer("Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu())
-        return
-
-    items = [dict(i) for i in items]
-    user_filters[uid] = {"items": items, "page": 0}
-    label = f"до {max_price:,} ₽" if not min_price else f"{min_price:,} — {max_price:,} ₽" if max_price else f"от {min_price:,} ₽"
-    await message.answer(f"💰 {label} — {len(items)} товаров:", reply_markup=kb.items_list_kb(items))
+    await _show_price_results(message, uid, items, min_price, max_price, category, "price_asc", label, is_message=True)
 
 
-@router.callback_query(F.data.startswith("price:"))
+@router.callback_query(F.data.startswith("price:") & ~F.data.startswith("price:custom"))
 async def cb_price_filter(call: CallbackQuery):
     parts = call.data.split(":")
-    min_p, max_p = parts[1], parts[2]
-    min_price = int(min_p) or None
-    max_price = int(max_p) or None
+    min_p, max_p = int(parts[1]), int(parts[2])
+    category = parts[3] if len(parts) > 3 else "all"
+    min_price = min_p or None
+    max_price = max_p or None
+    cat = category if category != "all" else None
 
-    items = await db.get_items(min_price=min_price, max_price=max_price)
+    items = [dict(i) for i in await db.get_items(category=cat, min_price=min_price, max_price=max_price, sort="price_asc")]
+    label = _price_label(min_price, max_price)
     uid = call.from_user.id
+    await _show_price_results(call, uid, items, min_price, max_price, category, "price_asc", label)
 
-    if not items:
-        await safe_edit(call, "Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
-        return
 
-    items = [dict(i) for i in items]
-    user_filters[uid] = {"items": items, "page": 0}
+@router.callback_query(F.data.startswith("psort:"))
+async def cb_price_sort(call: CallbackQuery):
+    parts = call.data.split(":", 3)
+    sort = parts[1]
+    category = parts[2]
+    label = parts[3]
 
-    label = call.message.reply_markup.inline_keyboard
-    price_text = ""
-    for row in label:
-        for btn in row:
-            if btn.callback_data == call.data:
-                price_text = btn.text
-                break
+    uid = call.from_user.id
+    data = user_filters.get(uid, {})
+    min_price = data.get("pf_min")
+    max_price = data.get("pf_max")
+    cat = category if category != "all" else None
 
-    await safe_edit(call, f"💰 {price_text} — {len(items)} товаров:", reply_markup=kb.items_list_kb(items))
+    items = [dict(i) for i in await db.get_items(category=cat, min_price=min_price, max_price=max_price, sort=sort)]
+    await _show_price_results(call, uid, items, min_price, max_price, category, sort, label)
