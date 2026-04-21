@@ -198,20 +198,25 @@ def price_filter_kb(category: str = "all") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def price_sort_kb(items_count: int, min_p: int, max_p: int, category: str,
-                  sort: str, label: str) -> InlineKeyboardMarkup:
+def price_sort_kb(category: str, sort: str, label: str) -> InlineKeyboardMarkup:
     sorts = [
         ("💰 Дешевле", "price_asc"),
         ("💎 Дороже", "price_desc"),
-        ("🏷 По модели", "name"),
     ]
     sort_buttons = []
     for s_label, s_key in sorts:
         text = f"✅ {s_label}" if sort == s_key else s_label
         sort_buttons.append(InlineKeyboardButton(text=text, callback_data=f"psort:{s_key}:{category}:{label}"))
     buttons = [sort_buttons]
-    buttons.append([InlineKeyboardButton(text="🔄 Изменить фильтр", callback_data=f"pf_cat:{category}" if category != "all" else "pf_back")])
+    buttons.append([InlineKeyboardButton(text="🏷 По модели", callback_data=f"pmodel_list:{category}:{label}")])
+    buttons.append([InlineKeyboardButton(text="🔄 Фильтр", callback_data=f"pf_cat:{category}" if category != "all" else "pf_back")])
     buttons.append([InlineKeyboardButton(text="◀️ Главное меню", callback_data="back:main")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def price_model_list_kb(models: list, category: str, label: str) -> InlineKeyboardMarkup:
+    buttons = [[InlineKeyboardButton(text=m, callback_data=f"pmodel:{m}:{category}:{label}")] for m in models]
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data=f"pmodel_back:{category}:{label}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

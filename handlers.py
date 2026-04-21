@@ -1012,7 +1012,7 @@ async def _show_price_results(target, uid: int, items: list, min_price, max_pric
     actual_min = min(i["price"] for i in items)
     actual_max = max(i["price"] for i in items)
     cat_label = "" if category == "all" else f" · {category}"
-    sort_labels = {"price_asc": "💰 дешевле", "price_desc": "💎 дороже", "name": "🏷 по модели"}
+    sort_labels = {"price_asc": "💰 дешевле", "price_desc": "💎 дороже"}
     sort_label = sort_labels.get(sort, "")
 
     text = (
@@ -1023,14 +1023,16 @@ async def _show_price_results(target, uid: int, items: list, min_price, max_pric
 
     user_filters[uid] = {"items": items, "page": 0, "pf_min": min_price, "pf_max": max_price,
                          "pf_cat": category, "pf_sort": sort, "pf_label": label}
-    markup = kb.price_sort_kb(len(items), actual_min, actual_max, category, sort, label)
+    markup = kb.price_sort_kb(category, sort, label)
 
     if is_message:
         await target.answer(text, parse_mode="HTML", reply_markup=markup)
-        await target.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+        list_msg = await target.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+        user_filters[uid]["pf_list_id"] = list_msg.message_id
     else:
         await safe_edit(target, text, parse_mode="HTML", reply_markup=markup)
-        await target.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+        list_msg = await target.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+        user_filters[uid]["pf_list_id"] = list_msg.message_id
 
 
 @router.message(F.text == "💰 Фильтр по цене")
@@ -1117,4 +1119,126 @@ async def cb_price_sort(call: CallbackQuery):
     cat = category if category != "all" else None
 
     items = [dict(i) for i in await db.get_items(category=cat, min_price=min_price, max_price=max_price, sort=sort)]
-    await _show_price_results(call, uid, items, min_price, max_price, category, sort, label)
+
+    if not items:
+        await safe_edit(call, f"Товаров нет.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
+        return
+
+    actual_min = min(i["price"] for i in items)
+    actual_max = max(i["price"] for i in items)
+    cat_label = "" if category == "all" else f" · {category}"
+    sort_labels = {"price_asc": "💰 дешевле", "price_desc": "💎 дороже"}
+    sort_label = sort_labels.get(sort, "")
+
+    text = (
+        f"🔍 <b>{label}{cat_label}</b>\n"
+        f"Найдено: <b>{len(items)}</b> шт. · {actual_min:,} — {actual_max:,} ₽\n"
+        f"Сортировка: {sort_label}"
+    )
+    user_filters[uid]["items"] = items
+    user_filters[uid]["pf_sort"] = sort
+
+    await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, sort, label))
+    await call.answer()
+
+    # обновляем список товаров
+    list_msg_id = user_filters[uid].get("pf_list_id")
+    if list_msg_id:
+        try:
+            await call.bot.edit_message_reply_markup(
+                chat_id=call.message.chat.id,
+                message_id=list_msg_id,
+                reply_markup=kb.items_list_kb(items)
+            )
+        except Exception:
+            msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+            user_filters[uid]["pf_list_id"] = msg.message_id
+    else:
+        msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(items))
+        user_filters[uid]["pf_list_id"] = msg.message_id
+
+
+@router.callback_query(F.data.startswith("pmodel_list:"))
+async def cb_pmodel_list(call: CallbackQuery):
+    parts = call.data.split(":", 2)
+    category = parts[1]
+    label = parts[2]
+
+    uid = call.from_user.id
+    data = user_filters.get(uid, {})
+    items = data.get("items", [])
+
+    # собираем уникальные модели из текущих результатов
+    seen = set()
+    models = []
+    for item in items:
+        # берём первые 2-3 слова как имя модели
+        name_parts = item["name"].split()
+        model = " ".join(name_parts[:3]) if len(name_parts) >= 3 else item["name"]
+        if model not in seen:
+            seen.add(model)
+            models.append(model)
+    models.sort()
+
+    if not models:
+        await call.answer("Модели не найдены", show_alert=True)
+        return
+
+    await safe_edit(call, "Выберите модель:", reply_markup=kb.price_model_list_kb(models, category, label))
+
+
+@router.callback_query(F.data.startswith("pmodel_back:"))
+async def cb_pmodel_back(call: CallbackQuery):
+    parts = call.data.split(":", 2)
+    category = parts[1]
+    label = parts[2]
+    uid = call.from_user.id
+    data = user_filters.get(uid, {})
+    sort = data.get("pf_sort", "price_asc")
+    items = data.get("items", [])
+
+    if not items:
+        await safe_edit(call, "Сессия устарела.", reply_markup=kb.main_menu_inline())
+        return
+
+    actual_min = min(i["price"] for i in items)
+    actual_max = max(i["price"] for i in items)
+    cat_label = "" if category == "all" else f" · {category}"
+    sort_labels = {"price_asc": "💰 дешевле", "price_desc": "💎 дороже"}
+    text = (
+        f"🔍 <b>{label}{cat_label}</b>\n"
+        f"Найдено: <b>{len(items)}</b> шт. · {actual_min:,} — {actual_max:,} ₽\n"
+        f"Сортировка: {sort_labels.get(sort, '')}"
+    )
+    await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, sort, label))
+
+
+@router.callback_query(F.data.startswith("pmodel:"))
+async def cb_pmodel_select(call: CallbackQuery):
+    parts = call.data.split(":", 3)
+    model = parts[1]
+    category = parts[2]
+    label = parts[3]
+
+    uid = call.from_user.id
+    data = user_filters.get(uid, {})
+    all_items = data.get("items", [])
+
+    filtered = [i for i in all_items if i["name"].startswith(model)]
+
+    if not filtered:
+        await call.answer("Товаров этой модели нет", show_alert=True)
+        return
+
+    actual_min = min(i["price"] for i in filtered)
+    actual_max = max(i["price"] for i in filtered)
+    text = (
+        f"🏷 <b>{model}</b>\n"
+        f"Найдено: <b>{len(filtered)}</b> шт. · {actual_min:,} — {actual_max:,} ₽"
+    )
+    user_filters[uid]["items"] = filtered
+    user_filters[uid]["pf_sort"] = "name"
+
+    await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, "name", label))
+    msg = await call.message.answer("Выберите товар:", reply_markup=kb.items_list_kb(filtered))
+    user_filters[uid]["pf_list_id"] = msg.message_id
