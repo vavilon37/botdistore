@@ -64,8 +64,13 @@ MENU_CATEGORY_MAP = {
 
 
 @router.message(F.text == "📱 Смартфоны New")
-async def cmd_smartphones(message: Message):
-    await message.answer("За актуальными ценами на технику @idistoreman", reply_markup=kb.main_menu())
+async def cmd_smartphones_new(message: Message):
+    uid = message.from_user.id
+    user_filters.setdefault(uid, {})["phone_cond"] = "new"
+    await message.answer(
+        "За актуальными ценами на технику @idistoreman\n\nВыберите поколение iPhone:",
+        reply_markup=kb.iphone_groups_kb("new")
+    )
 
 
 @router.message(F.text == "♻️ Смартфоны Б/У")
