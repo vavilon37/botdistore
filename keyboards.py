@@ -9,7 +9,7 @@ def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="📱 Смартфоны New"), KeyboardButton(text="♻️ Смартфоны Б/У")],
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
-        [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
+        [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="🖥 Маки")],
         [KeyboardButton(text="🔍 Поиск по названию"), KeyboardButton(text="💰 Фильтр по цене")],
         [KeyboardButton(text="🍎 Рынок б/у iPhone")],
         [KeyboardButton(text="❤️ Избранное")],

@@ -56,9 +56,7 @@ def format_item(item) -> str:
 
 
 MENU_CATEGORY_MAP = {
-    "🎧 Наушники": "Наушники",
     "🔌 Аксессуары": "Аксессуары",
-    "📦 Другое": "Другое",
 }
 
 
@@ -186,6 +184,64 @@ async def cmd_smartphones_bu(message: Message):
     uid = message.from_user.id
     user_filters.setdefault(uid, {})["phone_cond"] = "used"
     await message.answer("Б/У смартфоны — выберите раздел:", reply_markup=kb.smartphones_kb("used"))
+
+
+@router.message(F.text == "🖥 Маки")
+async def cmd_macs(message: Message):
+    await message.answer(
+        "🖥 Mac — цены у @idistoreman\n\n"
+        "💻 MacBook Air\n"
+        "MacBook Air 13\" M1 (2020) — 🩶 🟡 ⚪\n"
+        "MacBook Air 13\" M2 (2022) — 🖤 🤍 🩶 ⚪\n"
+        "MacBook Air 15\" M2 (2023) — 🖤 🤍 🩶 ⚪\n"
+        "MacBook Air 13\" M3 (2024) — 🖤 🤍 🩶 ⚪ 🩵\n"
+        "MacBook Air 15\" M3 (2024) — 🖤 🤍 🩶 ⚪ 🩵\n"
+        "MacBook Air 13\" M5 (2026) — 🩵 🖤 🤍 ⚪\n"
+        "MacBook Air 15\" M5 (2026) — 🩵 🖤 🤍 ⚪\n\n"
+        "💻 MacBook Pro\n"
+        "MacBook Pro 14\" M1 Pro/Max (2021) — 🩶 ⚪\n"
+        "MacBook Pro 16\" M1 Pro/Max (2021) — 🩶 ⚪\n"
+        "MacBook Pro 14\" M2 Pro/Max (2023) — 🩶 ⚪\n"
+        "MacBook Pro 16\" M2 Pro/Max (2023) — 🩶 ⚪\n"
+        "MacBook Pro 14\" M3/Pro/Max (2023) — 🖤 ⚪\n"
+        "MacBook Pro 16\" M3 Pro/Max (2023) — 🖤 ⚪\n"
+        "MacBook Pro 14\" M4/Pro/Max (2024) — 🖤 ⚪\n"
+        "MacBook Pro 16\" M4 Pro/Max (2024) — 🖤 ⚪\n"
+        "MacBook Pro 14\" M5/Pro/Max (2025-2026) — 🖤 ⚪\n"
+        "MacBook Pro 16\" M5 Pro/Max (2026) — 🖤 ⚪\n\n"
+        "🖥 iMac\n"
+        "iMac 24\" M1 (2021) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n"
+        "iMac 24\" M3 (2023) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n"
+        "iMac 24\" M4 (2024) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n\n"
+        "🖥 Mac mini\n"
+        "Mac mini M1 (2020) — ⚪\n"
+        "Mac mini M2/M2 Pro (2023) — ⚪\n"
+        "Mac mini M4/M4 Pro (2024) — ⚪\n\n"
+        "🖥 Mac Studio\n"
+        "Mac Studio M1 Max/Ultra (2022) — ⚪\n"
+        "Mac Studio M2 Max/Ultra (2023) — ⚪\n"
+        "Mac Studio M4 Max/M3 Ultra (2025) — ⚪",
+        reply_markup=kb.main_menu()
+    )
+
+
+@router.message(F.text == "🎧 Наушники")
+async def cmd_headphones(message: Message):
+    await message.answer(
+        "🎧 Наушники Apple — цены у @idistoreman\n\n"
+        "AirPods 2 (2019) — ⚪\n"
+        "AirPods 3 (2021) — ⚪\n"
+        "AirPods 4 (2024) — ⚪\n"
+        "AirPods 4 ANC (2024) — ⚪\n\n"
+        "AirPods Pro 1 (2019) — ⚪\n"
+        "AirPods Pro 2 Lightning (2022) — ⚪\n"
+        "AirPods Pro 2 USB-C (2023) — ⚪\n"
+        "AirPods Pro 3 (2025) — ⚪\n\n"
+        "AirPods Max 1 Lightning (2020) — 🟤 ⚪ 🩵 🟢 🩷\n"
+        "AirPods Max 1 USB-C (2024) — 🖤 🤍 🔵 🟣 🟠\n"
+        "AirPods Max 2 (2026) — 🖤 🤍 🔵 🟣 🟠",
+        reply_markup=kb.main_menu()
+    )
 
 
 @router.message(F.text.in_(MENU_CATEGORY_MAP))
