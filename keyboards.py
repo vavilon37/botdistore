@@ -7,7 +7,7 @@ CONDITIONS = ["Новое", "Как новое", "Хорошее", "Удовле
 
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="♻️ Смартфоны Б/У")],
+        [KeyboardButton(text="📱 Смартфоны New"), KeyboardButton(text="♻️ Смартфоны Б/У")],
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="📦 Другое")],
         [KeyboardButton(text="🔍 Поиск по названию"), KeyboardButton(text="💰 Фильтр по цене")],
@@ -150,7 +150,7 @@ def items_list_kb(items: list, page: int = 0, per_page: int = 5) -> InlineKeyboa
 def admin_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="➕ Добавить iPhone"), KeyboardButton(text="➕ Добавить товар")],
-        [KeyboardButton(text="📱 Смартфоны"), KeyboardButton(text="🔍 Поиск по названию")],
+        [KeyboardButton(text="📱 Смартфоны New"), KeyboardButton(text="🔍 Поиск по названию")],
         [KeyboardButton(text="📢 Рассылка")],
         [KeyboardButton(text="◀️ Выйти из админки")],
     ], resize_keyboard=True)
