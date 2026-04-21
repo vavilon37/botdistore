@@ -65,11 +65,33 @@ MENU_CATEGORY_MAP = {
 
 @router.message(F.text == "📱 Смартфоны New")
 async def cmd_smartphones_new(message: Message):
-    uid = message.from_user.id
-    user_filters.setdefault(uid, {})["phone_cond"] = "new"
     await message.answer(
-        "За актуальными ценами на технику @idistoreman\n\nВыберите поколение iPhone:",
-        reply_markup=kb.iphone_groups_kb("new")
+        "📱 Новые iPhone — актуальные цены у @idistoreman\n\n"
+        "iPhone 12 mini — ⚫ ⚪ 🔴 🟢 🔵 🟣\n"
+        "iPhone 12 — ⚫ ⚪ 🔴 🟢 🔵 🟣\n"
+        "iPhone 12 Pro — ⚪ 🟤 🟡 🔵\n"
+        "iPhone 12 Pro Max — ⚪ 🟤 🟡 🔵\n\n"
+        "iPhone 13 mini — 🔴 🤍 🖤 🔵 🩷 🟢\n"
+        "iPhone 13 — 🤍 🖤 🔵 🩷 🟢 🔴\n"
+        "iPhone 13 Pro — ⚪ 🟤 🟡 🔵 🟢\n"
+        "iPhone 13 Pro Max — ⚪ 🟤 🟡 🔵 🟢\n\n"
+        "iPhone 14 — 🖤 🟣 🤍 🔴 🔵 🟡\n"
+        "iPhone 14 Plus — 🖤 🟣 🤍 🔴 🔵 🟡\n"
+        "iPhone 14 Pro — 🟤 ⚪ 🟡 🟣\n"
+        "iPhone 14 Pro Max — 🟤 ⚪ 🟡 🟣\n\n"
+        "iPhone 15 — ⚫ 🩷 🟡 🟢 🔵\n"
+        "iPhone 15 Plus — ⚫ 🩷 🟡 🟢 🔵\n"
+        "iPhone 15 Pro — ⚫ ⚪ 🔵 🤍\n"
+        "iPhone 15 Pro Max — ⚫ ⚪ 🔵 🤍\n\n"
+        "iPhone 16 — ⚫ ⚪ 🩷 🩵 🔵\n"
+        "iPhone 16 Plus — ⚫ ⚪ 🩷 🩵 🔵\n"
+        "iPhone 16 Pro — ⚫ ⚪ 🤍 🟡\n"
+        "iPhone 16 Pro Max — ⚫ ⚪ 🤍 🟡\n\n"
+        "iPhone 17 — ⚫ ⚪ 🔵 🟢 🩵\n"
+        "iPhone Air — ⚫ ⚪ 🟡 🩵\n"
+        "iPhone 17 Pro — ⚪ 🟠 🔵\n"
+        "iPhone 17 Pro Max — ⚪ 🟠 🔵",
+        reply_markup=kb.main_menu()
     )
 
 
