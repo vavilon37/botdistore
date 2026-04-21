@@ -51,7 +51,7 @@ def format_item(item) -> str:
     )
     if item["description"]:
         text += f"\n{item['description']}"
-    text += "\n\n✍️ Написать: @distore_original"
+    text += "\n\n✍️ Написать: @idistoreman"
     return text
 
 
@@ -65,7 +65,7 @@ MENU_CATEGORY_MAP = {
 
 @router.message(F.text == "📱 Смартфоны")
 async def cmd_smartphones(message: Message):
-    await message.answer("Не нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu())
+    await message.answer("Не нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu())
 
 
 @router.message(F.text == "♻️ Смартфоны Б/У")
@@ -103,7 +103,7 @@ async def process_search(message: Message, state: FSMContext):
     items = await db.search_items(message.text)
     if not items:
         await message.answer(
-            "Ничего не найдено. Попробуйте другой запрос.\n\nНе нашли что искали? Пишите: @distore_original",
+            "Ничего не найдено. Попробуйте другой запрос.\n\nНе нашли что искали? Пишите: @idistoreman",
             reply_markup=kb.main_menu()
         )
         return
@@ -143,7 +143,7 @@ async def cmd_iphone_pricelist(message: Message):
 
 @router.message(F.text == "🔧 Сервис")
 async def cmd_service(message: Message):
-    await message.answer("По поводу ремонта пишите: @distore_original")
+    await message.answer("По поводу ремонта пишите: @idistoreman")
 
 
 @router.message(F.text == "ℹ️ О боте")
@@ -162,7 +162,7 @@ async def cmd_about(message: Message):
         "💰 <b>Фильтр по цене</b> — выбрать по бюджету\n"
         "❤️ <b>Избранное</b> — сохранённые товары\n"
         "🔧 <b>Сервис</b> — ремонт техники\n\n"
-        "✍️ По всем вопросам: @distore_original",
+        "✍️ По всем вопросам: @idistoreman",
         parse_mode="HTML"
     )
 
@@ -232,13 +232,13 @@ async def cmd_help(message: Message):
         "🔧 <b>СЕРВИС</b>\n"
         "━━━━━━━━━━━━━━━\n\n"
 
-        "Ремонт техники — напишите @distore_original.\n\n"
+        "Ремонт техники — напишите @idistoreman.\n\n"
 
         "━━━━━━━━━━━━━━━\n"
         "💬 <b>КОНТАКТ</b>\n"
         "━━━━━━━━━━━━━━━\n\n"
         "По любым вопросам, торгу, резерву и доставке:\n"
-        "✍️ @distore_original",
+        "✍️ @idistoreman",
         parse_mode="HTML"
     )
 
@@ -430,14 +430,14 @@ async def cb_iphone_color(call: CallbackQuery):
         all_items = await db.search_items(f"{model} {storage}")
 
     if not all_items:
-        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
+        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
         return
 
     all_items = [dict(i) for i in all_items]
     items = _filter_by_cond(all_items, cond)
 
     if not items:
-        await safe_edit(call, f"Нет товаров в категории «{COND_LABEL[cond]}».\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
+        await safe_edit(call, f"Нет товаров в категории «{COND_LABEL[cond]}».\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
         return
 
     user_filters[uid]["items"] = items
@@ -626,7 +626,7 @@ async def cb_isearch(call: CallbackQuery):
 
     items = _filter_by_cond(all_items, cond)
     if not items:
-        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
+        await safe_edit(call, "Товаров не найдено.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
         return
 
     user_filters[uid]["items"] = items
@@ -742,7 +742,7 @@ async def cb_share(call: CallbackQuery):
     )
     if item.get("description"):
         text += f"\n{item['description']}\n"
-    text += "\n✍️ Купить: @distore_original"
+    text += "\n✍️ Купить: @idistoreman"
 
     await call.message.answer(text, parse_mode="HTML")
     await call.answer()
@@ -855,7 +855,7 @@ async def process_price_range(message: Message, state: FSMContext):
     uid = message.from_user.id
 
     if not items:
-        await message.answer("Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu())
+        await message.answer("Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu())
         return
 
     items = [dict(i) for i in items]
@@ -875,7 +875,7 @@ async def cb_price_filter(call: CallbackQuery):
     uid = call.from_user.id
 
     if not items:
-        await safe_edit(call, "Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @distore_original", reply_markup=kb.main_menu_inline())
+        await safe_edit(call, "Товаров в этом диапазоне нет.\n\nНе нашли что искали? Пишите: @idistoreman", reply_markup=kb.main_menu_inline())
         return
 
     items = [dict(i) for i in items]

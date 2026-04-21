@@ -237,7 +237,7 @@ async def _finish_add(message: Message, state: FSMContext):
             f"🔔 Появился новый товар по вашей подписке!\n\n"
             f"<b>{name}</b> — {data['price']:,} ₽\n"
             f"Состояние: {data['condition']}\n\n"
-            f"✍️ Написать: @distore_original"
+            f"✍️ Написать: @idistoreman"
         )
         bot: Bot = message.bot
         for uid in subscribers:
