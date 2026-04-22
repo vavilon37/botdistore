@@ -1,7 +1,8 @@
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+import os
 
 import database as db
 import keyboards as kb
@@ -325,3 +326,29 @@ async def cmd_admin(message: Message):
         await message.answer("Нет доступа.")
         return
     await message.answer("Режим администратора активирован.", reply_markup=kb.admin_menu())
+
+
+@router.message(F.text == "/export")
+async def cmd_export(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("Нет доступа.")
+        return
+
+    db_path = db.DB_PATH
+    if not os.path.exists(db_path):
+        await message.answer("❌ Файл базы данных не найден.")
+        return
+
+    total = await db.count_active_items()
+    users = await db.count_users()
+
+    await message.answer_document(
+        FSInputFile(db_path, filename="shop.db"),
+        caption=(
+            f"📦 <b>Экспорт базы данных</b>\n\n"
+            f"🛍 Товаров в наличии: <b>{total}</b>\n"
+            f"👤 Пользователей: <b>{users}</b>\n\n"
+            f"Сохраните файл <code>shop.db</code> и замените им локальную копию."
+        ),
+        parse_mode="HTML"
+    )
