@@ -150,6 +150,7 @@ def items_list_kb(items: list, page: int = 0, per_page: int = 5) -> InlineKeyboa
 def admin_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text="➕ Добавить iPhone"), KeyboardButton(text="➕ Добавить товар")],
+        [KeyboardButton(text="✅ Продал товар"), KeyboardButton(text="📊 Синк в Sheets")],
         [KeyboardButton(text="📱 Смартфоны New"), KeyboardButton(text="🔍 Поиск по названию")],
         [KeyboardButton(text="📢 Рассылка")],
         [KeyboardButton(text="◀️ Выйти из админки")],

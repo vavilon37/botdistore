@@ -831,6 +831,15 @@ async def cb_delete_item(call: CallbackQuery):
 
     item_id = int(call.data.split(":")[1])
     await db.delete_item(item_id)
+
+    # Sync to Google Sheets — пометим как «Возврат» (история сохранится)
+    try:
+        import sheets_sync
+        if sheets_sync.is_enabled():
+            await sheets_sync.mark_deleted(item_id)
+    except Exception:
+        pass
+
     await call.answer("Товар удалён ✅")
     await call.message.delete()
 

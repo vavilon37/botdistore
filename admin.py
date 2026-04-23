@@ -6,6 +6,7 @@ import os
 
 import database as db
 import keyboards as kb
+import sheets_sync
 
 router = Router()
 
@@ -25,9 +26,15 @@ class AddItem(StatesGroup):
     name = State()
     category = State()
     condition = State()
-    price = State()
+    buy_price = State()    # цена закупки
+    price = State()        # цена продажи
     description = State()
     photo = State()
+
+
+class MarkSold(StatesGroup):
+    waiting_id = State()
+    waiting_price = State()
 
 
 def is_admin(user_id: int) -> bool:
@@ -146,16 +153,32 @@ async def add_category(call: CallbackQuery, state: FSMContext):
 async def add_condition(call: CallbackQuery, state: FSMContext):
     condition = call.data.split(":", 1)[1]
     await state.update_data(condition=condition)
+    await state.set_state(AddItem.buy_price)
+    await call.message.edit_text(
+        "💰 Введите <b>цену закупки</b> в рублях (только цифры).\n"
+        "Если не хотите указывать — отправьте <b>0</b>.",
+        parse_mode="HTML"
+    )
+
+
+@router.message(AddItem.buy_price)
+async def add_buy_price(message: Message, state: FSMContext):
+    txt = (message.text or "").strip().replace(" ", "")
+    if not txt.isdigit():
+        await message.answer("Пожалуйста, введите только число (или 0 чтобы пропустить).")
+        return
+    await state.update_data(buy_price=int(txt))
     await state.set_state(AddItem.price)
-    await call.message.edit_text("Введите цену в рублях (только цифры):")
+    await message.answer("💵 Введите <b>цену продажи</b> в рублях:", parse_mode="HTML")
 
 
 @router.message(AddItem.price)
 async def add_price(message: Message, state: FSMContext):
-    if not message.text.isdigit():
+    txt = (message.text or "").strip().replace(" ", "")
+    if not txt.isdigit():
         await message.answer("Пожалуйста, введите только число.")
         return
-    await state.update_data(price=int(message.text))
+    await state.update_data(price=int(txt))
     await state.set_state(AddItem.description)
     await message.answer("Введите описание товара (или отправьте '-' чтобы пропустить):")
 
@@ -200,6 +223,7 @@ async def _finish_add(message: Message, state: FSMContext):
     await state.clear()
 
     first_photo = photos[0] if photos else ""
+    buy_price = int(data.get("buy_price", 0) or 0)
     item_id = await db.add_item(
         name=data["name"],
         category=data["category"],
@@ -207,18 +231,49 @@ async def _finish_add(message: Message, state: FSMContext):
         price=data["price"],
         description=data.get("description", ""),
         photo_id=first_photo,
+        buy_price=buy_price,
+        model=data.get("iphone_model", ""),
+        storage=data.get("iphone_storage", ""),
+        color=data.get("iphone_color", ""),
     )
 
     if photos:
         await db.add_item_photos(item_id, photos)
 
+    # ─── Пишем в Google Sheets (📦 Склад) ───
+    margin_str = ""
+    if buy_price > 0:
+        margin = data["price"] - buy_price
+        margin_pct = margin / buy_price * 100 if buy_price else 0
+        margin_str = f"\nНаценка: {margin:,} ₽ ({margin_pct:.1f}%)"
+
+    sync_status = ""
+    if sheets_sync.is_enabled():
+        result = await sheets_sync.add_item(
+            item_id,
+            category=data["category"],
+            model=data.get("iphone_model") or data["name"],
+            storage=data.get("iphone_storage", ""),
+            color=data.get("iphone_color", ""),
+            condition=data["condition"],
+            buy_price=buy_price,
+            sell_price=data["price"],
+            note=data.get("description", ""),
+        )
+        sync_status = "\n📊 Записано в Google Sheets" if result.get("ok") else \
+                      f"\n⚠️ Sheets: {result.get('error','?')}"
+
     await message.answer(
         f"✅ Товар добавлен!\n"
-        f"ID: {item_id}\n"
-        f"<b>{data['name']}</b> — {data['price']:,} ₽\n"
+        f"ID: <code>{item_id}</code>\n"
+        f"<b>{data['name']}</b>\n"
+        f"Закупка: {buy_price:,} ₽\n"
+        f"Продажа: {data['price']:,} ₽"
+        f"{margin_str}\n"
         f"Категория: {data['category']}\n"
         f"Состояние: {data['condition']}\n"
-        f"Фото: {len(photos)} шт.",
+        f"Фото: {len(photos)} шт."
+        f"{sync_status}",
         parse_mode="HTML",
         reply_markup=kb.admin_menu()
     )
@@ -326,6 +381,142 @@ async def cmd_admin(message: Message):
         await message.answer("Нет доступа.")
         return
     await message.answer("Режим администратора активирован.", reply_markup=kb.admin_menu())
+
+
+# ─── Помечаем товар проданным ──────────────────────────────
+
+@router.message(F.text == "✅ Продал товар")
+async def cmd_sold_start(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.set_state(MarkSold.waiting_id)
+    await message.answer(
+        "Введите <b>ID</b> проданного товара (число).\n"
+        "ID показывается при добавлении и в карточке товара.\n\n"
+        "Для отмены — /cancel",
+        parse_mode="HTML"
+    )
+
+
+@router.message(MarkSold.waiting_id)
+async def sold_id(message: Message, state: FSMContext):
+    txt = (message.text or "").strip()
+    if txt == "/cancel":
+        await state.clear()
+        await message.answer("Отменено.", reply_markup=kb.admin_menu()); return
+    if not txt.isdigit():
+        await message.answer("Нужно число (ID товара)."); return
+
+    item_id = int(txt)
+    item = await db.get_item(item_id)
+    if not item:
+        await state.clear()
+        await message.answer("Товар с таким ID не найден.", reply_markup=kb.admin_menu()); return
+
+    await state.update_data(item_id=item_id, current_price=item["price"])
+    await state.set_state(MarkSold.waiting_price)
+    await message.answer(
+        f"<b>{item['name']}</b>\n"
+        f"Текущая цена в боте: {item['price']:,} ₽\n\n"
+        f"Введите <b>финальную цену продажи</b> в рублях.\n"
+        f"Если продали по той же цене — отправьте <b>=</b>\n"
+        f"Для отмены — /cancel",
+        parse_mode="HTML"
+    )
+
+
+@router.message(MarkSold.waiting_price)
+async def sold_price(message: Message, state: FSMContext):
+    txt = (message.text or "").strip().replace(" ", "")
+    if txt == "/cancel":
+        await state.clear()
+        await message.answer("Отменено.", reply_markup=kb.admin_menu()); return
+
+    data = await state.get_data()
+    item_id = data["item_id"]
+    if txt == "=":
+        sell_price = data["current_price"]
+    elif txt.isdigit():
+        sell_price = int(txt)
+    else:
+        await message.answer("Нужно число или =")
+        return
+
+    await state.clear()
+
+    # Локальная БД
+    await db.mark_sold(item_id, sell_price=sell_price)
+
+    # Google Sheets
+    sync_status = ""
+    if sheets_sync.is_enabled():
+        res = await sheets_sync.mark_sold(item_id, sell_price=sell_price)
+        sync_status = "📊 Записано в Google Sheets" if res.get("ok") else \
+                      f"⚠️ Sheets: {res.get('error','?')}"
+
+    await message.answer(
+        f"✅ Товар <code>{item_id}</code> помечен проданным за <b>{sell_price:,} ₽</b>\n"
+        f"{sync_status}",
+        parse_mode="HTML",
+        reply_markup=kb.admin_menu()
+    )
+
+
+# ─── Массовая выгрузка всех товаров в Sheets (одноразово) ───
+
+@router.message(F.text == "📊 Синк в Sheets")
+async def cmd_sync_all(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    if not sheets_sync.is_enabled():
+        await message.answer(
+            "❌ Синхронизация выключена.\n\n"
+            "Добавьте в .env:\n"
+            "<code>SHEETS_WEBAPP_URL=...</code>\n"
+            "<code>SHEETS_TOKEN=...</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Сначала — пинг
+    pong = await sheets_sync.ping()
+    if not pong.get("ok"):
+        await message.answer(f"❌ Не удалось достучаться до Apps Script:\n<code>{pong.get('error')}</code>",
+                             parse_mode="HTML")
+        return
+
+    await message.answer("⏳ Выгружаю все товары в Google Sheets...")
+
+    items = await db.get_items()  # только активные
+    sent = 0
+    failed = 0
+    for item in items:
+        try:
+            res = await sheets_sync.add_item(
+                item["id"],
+                category=item["category"],
+                model=item["model"] if "model" in item.keys() and item["model"] else item["name"],
+                storage=(item["storage"] if "storage" in item.keys() else "") or "",
+                color=(item["color"] if "color" in item.keys() else "") or "",
+                condition=item["condition"],
+                buy_price=int(item["buy_price"] or 0) if "buy_price" in item.keys() else 0,
+                sell_price=int(item["price"]),
+                note=item["description"] or "",
+            )
+            if res.get("ok"):
+                sent += 1
+            else:
+                failed += 1
+        except Exception:
+            failed += 1
+
+    await message.answer(
+        f"✅ Готово.\n"
+        f"Загружено: <b>{sent}</b>\n"
+        f"Ошибок: <b>{failed}</b>",
+        parse_mode="HTML",
+        reply_markup=kb.admin_menu()
+    )
 
 
 @router.message(F.text == "/export")

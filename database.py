@@ -13,12 +13,29 @@ async def init_db():
                 category TEXT NOT NULL,
                 condition TEXT NOT NULL,
                 price INTEGER NOT NULL,
+                buy_price INTEGER DEFAULT 0,
+                model TEXT,
+                storage TEXT,
+                color TEXT,
                 description TEXT,
                 photo_id TEXT,
                 active INTEGER DEFAULT 1,
+                sold_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Миграции для уже существующих БД — добавляем недостающие колонки
+        for col, ddl in [
+            ("buy_price",  "ALTER TABLE items ADD COLUMN buy_price INTEGER DEFAULT 0"),
+            ("model",      "ALTER TABLE items ADD COLUMN model TEXT"),
+            ("storage",    "ALTER TABLE items ADD COLUMN storage TEXT"),
+            ("color",      "ALTER TABLE items ADD COLUMN color TEXT"),
+            ("sold_at",    "ALTER TABLE items ADD COLUMN sold_at TIMESTAMP"),
+        ]:
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # колонка уже есть
         await db.execute("""
             CREATE TABLE IF NOT EXISTS item_photos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,14 +78,35 @@ async def init_db():
 
 
 async def add_item(name: str, category: str, condition: str, price: int,
-                   description: str, photo_id: str) -> int:
+                   description: str, photo_id: str,
+                   buy_price: int = 0, model: str = "",
+                   storage: str = "", color: str = "") -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO items (name, category, condition, price, description, photo_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, category, condition, price, description, photo_id)
+            "INSERT INTO items (name, category, condition, price, buy_price, "
+            "model, storage, color, description, photo_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, category, condition, price, buy_price,
+             model, storage, color, description, photo_id)
         )
         await db.commit()
         return cursor.lastrowid
+
+
+async def mark_sold(item_id: int, sell_price: int = None):
+    """Помечаем товар проданным: active=0, sold_at=now, опц. перезапись цены."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        if sell_price is not None:
+            await db.execute(
+                "UPDATE items SET active = 0, sold_at = CURRENT_TIMESTAMP, price = ? WHERE id = ?",
+                (sell_price, item_id)
+            )
+        else:
+            await db.execute(
+                "UPDATE items SET active = 0, sold_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (item_id,)
+            )
+        await db.commit()
 
 
 async def add_item_photos(item_id: int, photo_ids: list[str]):
