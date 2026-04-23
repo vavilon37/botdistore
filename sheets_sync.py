@@ -28,6 +28,21 @@ def is_enabled() -> bool:
     return bool(WEBAPP_URL and TOKEN)
 
 
+# ─── Фильтр: в Sheets попадают ТОЛЬКО Б/У iPhone ──────────
+# Новые iPhone (condition == "Новый") и любые аксессуары/прочая техника
+# учитываются в SQLite, но в Google Sheets не выгружаются.
+_NEW_CONDITIONS = {"новый", "новое", "new"}
+
+def _is_used_iphone(model: str, condition: str) -> bool:
+    m = (model or "").lower()
+    c = (condition or "").strip().lower()
+    if "iphone" not in m:
+        return False
+    if c in _NEW_CONDITIONS:
+        return False
+    return True
+
+
 def _post_sync(payload: dict) -> dict:
     """Блокирующий POST. Запускаем в executor чтобы не тормозить aiogram."""
     body = json.dumps({"token": TOKEN, **payload}).encode("utf-8")
@@ -66,9 +81,14 @@ async def add_item(item_id: int, *, category: str, model: str,
                    condition: str = "", buy_price: int = 0,
                    sell_price: int = 0, note: str = "",
                    created_at: str = None) -> dict:
-    """Добавить или обновить товар в листе 📦 Склад."""
+    """Добавить или обновить товар в листе 📦 Склад.
+
+    Только Б/У iPhone — всё остальное (новые iPhone, аксессуары) пропускается.
+    """
     if not is_enabled():
         return {"ok": False, "error": "disabled"}
+    if not _is_used_iphone(model, condition):
+        return {"ok": True, "skipped": "не Б/У iPhone — фильтр Sheets"}
     return await _post({
         "op": "add",
         "id": int(item_id),

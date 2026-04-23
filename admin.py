@@ -260,8 +260,13 @@ async def _finish_add(message: Message, state: FSMContext):
             sell_price=data["price"],
             note=data.get("description", ""),
         )
-        sync_status = "\n📊 Записано в Google Sheets" if result.get("ok") else \
-                      f"\n⚠️ Sheets: {result.get('error','?')}"
+        if result.get("ok"):
+            if result.get("skipped"):
+                sync_status = "\n📊 Sheets: пропущено (только Б/У iPhone)"
+            else:
+                sync_status = "\n📊 Записано в Google Sheets"
+        else:
+            sync_status = f"\n⚠️ Sheets: {result.get('error','?')}"
 
     await message.answer(
         f"✅ Товар добавлен!\n"
@@ -489,6 +494,7 @@ async def cmd_sync_all(message: Message):
 
     items = await db.get_items()  # только активные
     sent = 0
+    skipped = 0
     failed = 0
     for item in items:
         try:
@@ -504,7 +510,10 @@ async def cmd_sync_all(message: Message):
                 note=item["description"] or "",
             )
             if res.get("ok"):
-                sent += 1
+                if res.get("skipped"):
+                    skipped += 1
+                else:
+                    sent += 1
             else:
                 failed += 1
         except Exception:
@@ -512,7 +521,8 @@ async def cmd_sync_all(message: Message):
 
     await message.answer(
         f"✅ Готово.\n"
-        f"Загружено: <b>{sent}</b>\n"
+        f"Загружено: <b>{sent}</b> (Б/У iPhone)\n"
+        f"Пропущено: <b>{skipped}</b> (новые iPhone и аксессуары)\n"
         f"Ошибок: <b>{failed}</b>",
         parse_mode="HTML",
         reply_markup=kb.admin_menu()
