@@ -138,19 +138,32 @@ def _is_footnote_line(line: str) -> bool:
 
 HEADPHONES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "headphones_cache.json")
 
-# Категории наушников: ключ → (display_name, паттерны для определения из текста)
 HP_CATEGORIES = {
-    "airpods": ("AirPods", re.compile(r"\bAirPods\s*[234]\b|\bAirPods\s+4\b", re.IGNORECASE)),
-    "airpods_pro": ("AirPods Pro", re.compile(r"AirPods\s+Pro", re.IGNORECASE)),
-    "airpods_max": ("AirPods Max", re.compile(r"AirPods\s+Max", re.IGNORECASE)),
+    "airpods": "AirPods",
+    "airpods_pro": "AirPods Pro",
+    "airpods_max": "AirPods Max",
 }
+
+# Наценка 1000 для запчастей (отдельные уши, боксы)
+HP_PARTS_MARKUP = 1000
 
 _HP_EXCLUDE = re.compile(
     r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
     r"|уцен|замена|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
-    r"|состояние|б/у|БУ\b|used|refurb|витрин",
+    r"|состояние|б/у|БУ\b|used|refurb|витрин"
+    r"|EarPods",  # EarPods — не AirPods, не нужны
     re.IGNORECASE
 )
+
+# Строки с запчастями (ухо/бокс) — наценка 1000р
+_HP_PARTS_PATTERN = re.compile(
+    r"левое\s*ухо|правое\s*ухо|\bbox\b",
+    re.IGNORECASE
+)
+
+
+def _is_hp_parts_line(line: str) -> bool:
+    return bool(_HP_PARTS_PATTERN.search(line))
 
 
 def _is_headphones_price_line(line: str) -> bool:
@@ -161,31 +174,50 @@ def _is_headphones_price_line(line: str) -> bool:
     return has_model and has_price
 
 
+def _classify_hp_line(line: str) -> str | None:
+    """Возвращает ключ категории для строки с ценой наушников или None."""
+    if not _is_headphones_price_line(line):
+        return None
+    # Порядок важен: сначала Max и Pro (более специфичные)
+    if re.search(r"AirPods\s+Max", line, re.IGNORECASE):
+        return "airpods_max"
+    if re.search(r"AirPods\s+Pro", line, re.IGNORECASE):
+        return "airpods_pro"
+    return "airpods"
+
+
 def _detect_hp_categories(text: str) -> list[str]:
-    found = []
-    for key, (_, pattern) in HP_CATEGORIES.items():
-        if pattern.search(text):
-            found.append(key)
-    # Убираем дубли: если найден airpods_pro/max — не считаем просто airpods
-    if "airpods_pro" in found and "airpods" in found:
-        found.remove("airpods")
-    if "airpods_max" in found and "airpods" in found:
-        found.remove("airpods")
-    return found
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_hp_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
 
 
-def _filter_headphones_lines(text: str) -> str:
-    lines = text.split("\n")
-    result = []
+def _split_hp_by_category(text: str) -> dict[str, str]:
+    """Разбивает текст на части по категориям наушников. Пояснения копируются в каждую."""
+    lines_by_cat: dict[str, list] = {"airpods": [], "airpods_pro": [], "airpods_max": []}
+    footnote_lines: list = []
     in_footnote = False
-    for line in lines:
-        if _is_footnote_line(line):
+
+    for line in text.split("\n"):
+        if not in_footnote and _is_footnote_line(line):
             in_footnote = True
-        if in_footnote or _is_headphones_price_line(line):
-            result.append(line)
-    while result and not result[0].strip():
-        result.pop(0)
-    return "\n".join(result)
+        if in_footnote:
+            footnote_lines.append(line)
+            continue
+        cat = _classify_hp_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+
+    footnote_text = "\n".join(footnote_lines).strip()
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            prices = "\n".join(lines).strip()
+            result[cat] = prices + ("\n\n" + footnote_text if footnote_text else "")
+    return result
 
 
 def _add_markup_to_hp_prices(text: str) -> str:
@@ -194,13 +226,20 @@ def _add_markup_to_hp_prices(text: str) -> str:
     result = []
     for line in lines:
         if _is_headphones_price_line(line):
-            def replace_price(m):
+            markup = HP_PARTS_MARKUP if _is_hp_parts_line(line) else PRICE_MARKUP
+            def replace_price(m, _markup=markup):
                 price = int(m.group(1)) * 1000 + int(m.group(2))
-                new_price = price + PRICE_MARKUP
+                new_price = price + _markup
                 return f"{new_price // 1000}.{new_price % 1000:03d}"
             line = price_pattern.sub(replace_price, line)
         result.append(line)
     return "\n".join(result)
+
+
+def _filter_headphones_lines_for_cat(text: str, cat: str) -> str:
+    """Оставляет только строки нужной категории + пояснения."""
+    split = _split_hp_by_category(text)
+    return split.get(cat, "")
 
 
 def _load_hp_cache() -> dict:
@@ -570,7 +609,7 @@ async def cb_hp_category(call: CallbackQuery):
         )
         return
 
-    cat_name = HP_CATEGORIES.get(cat_key, (cat_key,))[0]
+    cat_name = HP_CATEGORIES.get(cat_key, cat_key)
     cache = _load_hp_cache()
     entry = cache.get(cat_key)
     is_admin = call.from_user.id in ADMIN_IDS
@@ -1618,7 +1657,7 @@ async def _send_hp_preview(message: Message):
     """Отправляет превью прайса наушников из _hp_preview_cache с кнопками."""
     await message.answer("👁 <b>Превью наушников — так увидит пользователь:</b>", parse_mode="HTML")
     for cat_key, entry in _hp_preview_cache.items():
-        cat_name = HP_CATEGORIES[cat_key][0]
+        cat_name = HP_CATEGORIES[cat_key]
         msgs = entry["msgs"]
         updated = entry["updated_at"]
         disclaimer = (
@@ -1705,7 +1744,8 @@ async def handle_hp_done(message: Message, state: FSMContext):
     _hp_preview_cache.clear()
     _hp_custom_notes.clear()
     for cat_key, parts in _hp_draft.items():
-        msgs = [_add_markup_to_hp_prices(_filter_headphones_lines(p)) for p in parts]
+        # Данные уже разбиты по категориям при пересылке — только добавляем наценку
+        msgs = [_add_markup_to_hp_prices(p) for p in parts]
         msgs = [m for m in msgs if m.strip()]
         _hp_preview_cache[cat_key] = {"msgs": msgs, "updated_at": _now_msk()}
     _hp_draft.clear()
@@ -1733,7 +1773,7 @@ async def cb_hp_preview_save(call: CallbackQuery):
                 clean_msgs[-1] = clean_msgs[-1] + "\n\n" + _hp_custom_notes[cat_key]
             msgs = clean_msgs
         cache[cat_key] = {"msgs": msgs, "updated_at": entry["updated_at"]}
-        saved.append(HP_CATEGORIES[cat_key][0])
+        saved.append(HP_CATEGORIES[cat_key])
     _save_hp_cache(cache)
     _hp_preview_cache.clear()
     _hp_custom_notes.clear()
@@ -1746,7 +1786,7 @@ async def cb_hp_preview_edit_notes(call: CallbackQuery, state: FSMContext):
     from bot import ADMIN_IDS
     if call.from_user.id not in ADMIN_IDS:
         return
-    cats_str = ", ".join(HP_CATEGORIES[c][0] for c in _hp_preview_cache)
+    cats_str = ", ".join(HP_CATEGORIES[c] for c in _hp_preview_cache)
     await call.message.edit_reply_markup()
     await call.message.answer(
         f"✏️ Пришли новый текст пометок для <b>{cats_str}</b>.\n"
@@ -1861,13 +1901,15 @@ async def handle_forwarded(message: Message):
     series_list = _detect_series(text)
 
     if hp_cats:
-        # Наушники
-        for cat in hp_cats:
-            if cat not in _hp_draft:
-                _hp_draft[cat] = []
-            _hp_draft[cat].append(text)
-        names = ", ".join(HP_CATEGORIES[c][0] for c in hp_cats)
-        total_parts = max(len(_hp_draft[c]) for c in hp_cats)
+        # Разбиваем сообщение по категориям сразу
+        split = _split_hp_by_category(text)
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                if cat not in _hp_draft:
+                    _hp_draft[cat] = []
+                _hp_draft[cat].append(cat_text)
+        names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
+        total_parts = max((len(_hp_draft[c]) for c in split if _hp_draft.get(c)), default=1)
         await message.answer(
             f"✅ Часть {total_parts} принята — {names}\n"
             f"Пересылай ещё или напиши <b>готово наушники</b> чтобы сохранить.",
