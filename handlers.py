@@ -251,37 +251,6 @@ async def cb_new_series(call: CallbackQuery):
             await call.message.answer("◀️", reply_markup=kb.new_series_back_kb())
 
 
-@router.message(F.forward_from_chat | F.forward_origin)
-async def handle_forwarded(message: Message):
-    from bot import ADMIN_IDS
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    text = message.text or message.caption or ""
-    if not text:
-        await message.answer("❌ Сообщение не содержит текста.")
-        return
-    series = _detect_series(text)
-    if not series:
-        return
-
-    filtered = _filter_iphone_lines(text)
-    marked = _add_markup_to_prices(filtered)
-
-    cache = _load_cache()
-    entry = cache.get(series, {"msgs": [], "updated_at": _now_msk()})
-    entry["msgs"].append(marked)
-    entry["updated_at"] = _now_msk()
-    cache[series] = entry
-    _save_cache(cache)
-
-    msg_num = len(entry["msgs"])
-    line_count = len([l for l in marked.split("\n") if l.strip()])
-    await message.answer(
-        f"✅ Сообщение {msg_num} сохранено — iPhone {series} ({line_count} строк)\n"
-        f"Можешь пересылать ещё сообщения для этой серии."
-    )
-
-
 @router.message(F.text == "📟 Планшеты")
 async def cmd_tablets(message: Message):
     await message.answer(
@@ -1416,3 +1385,37 @@ async def cb_pmodel_select(call: CallbackQuery):
     )
     await safe_edit(call, text, parse_mode="HTML", reply_markup=kb.price_sort_kb(category, "price_asc", label))
     await _pf_send_list(call.bot, call.message.chat.id, uid, filtered)
+
+
+@router.message()
+async def handle_forwarded(message: Message):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not (message.forward_origin or message.forward_from_chat or message.forward_from):
+        return
+    text = message.text or message.caption or ""
+    if not text:
+        await message.answer("❌ Сообщение не содержит текста.")
+        return
+    series = _detect_series(text)
+    if not series:
+        await message.answer("⚠️ Серия iPhone не определена в этом сообщении.")
+        return
+
+    filtered = _filter_iphone_lines(text)
+    marked = _add_markup_to_prices(filtered)
+
+    cache = _load_cache()
+    entry = cache.get(series, {"msgs": [], "updated_at": _now_msk()})
+    entry["msgs"].append(marked)
+    entry["updated_at"] = _now_msk()
+    cache[series] = entry
+    _save_cache(cache)
+
+    msg_num = len(entry["msgs"])
+    line_count = len([l for l in marked.split("\n") if l.strip()])
+    await message.answer(
+        f"✅ Сообщение {msg_num} сохранено — iPhone {series} ({line_count} строк)\n"
+        f"Можешь пересылать ещё сообщения для этой серии."
+    )
