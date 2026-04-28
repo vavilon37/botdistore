@@ -24,6 +24,12 @@ PRICE_MARKUP = 2000
 # Временный буфер до команды "готово": {series: [msg_text, ...]}
 _draft: dict = {}
 
+# Буфер готового прайса ожидающего подтверждения: {series: {"msgs": [...], "updated_at": ...}}
+_preview_cache: dict = {}
+
+# Кастомные пометки для серий: {series: str}
+_custom_notes: dict = {}
+
 
 # Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
 _KEEP_FOOTNOTE_PATTERNS = [
@@ -205,6 +211,10 @@ class FilterState(StatesGroup):
     choosing_category = State()
     choosing_condition = State()
     choosing_price = State()
+
+
+class PriceNotesState(StatesGroup):
+    waiting_notes = State()
 
 
 def format_item(item) -> str:
@@ -1456,26 +1466,120 @@ async def cb_pmodel_select(call: CallbackQuery):
     await _pf_send_list(call.bot, call.message.chat.id, uid, filtered)
 
 
+async def _send_preview(message: Message):
+    """Отправляет превью прайса из _preview_cache с кнопками."""
+    await message.answer("👁 <b>Превью — так увидит пользователь:</b>", parse_mode="HTML")
+    for series, entry in _preview_cache.items():
+        msgs = entry["msgs"]
+        updated = entry["updated_at"]
+        disclaimer = (
+            f"⚠️ Цены актуальны на момент последнего обновления. "
+            f"Для уточнения пишите @idistoreman\n\n"
+            f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
+        )
+        price_blocks = []
+        seen_footnote_lines = []
+        for msg_text in msgs:
+            price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+            if price_text.strip():
+                price_blocks.append(price_text.strip())
+            for line in footnote_text.split("\n"):
+                if line not in seen_footnote_lines:
+                    seen_footnote_lines.append(line)
+
+        # Кастомные пометки заменяют стандартные если заданы
+        if series in _custom_notes:
+            footnote_combined = _custom_notes[series].strip()
+        else:
+            footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+        for i, block in enumerate(price_blocks):
+            body = (disclaimer if i == 0 else "") + block
+            await message.answer(body, parse_mode="HTML")
+
+        if footnote_combined:
+            await message.answer(footnote_combined, parse_mode="HTML")
+
+    await message.answer(
+        "Как выглядит? Сохранить или изменить пометки?",
+        reply_markup=kb.preview_kb()
+    )
+
+
 @router.message(F.text.lower() == "готово")
-async def handle_done(message: Message):
+async def handle_done(message: Message, state: FSMContext):
     from bot import ADMIN_IDS
     if message.from_user.id not in ADMIN_IDS:
         return
     if not _draft:
         await message.answer("Нет накопленных сообщений.")
         return
-    cache = _load_cache()
-    saved = []
+    _preview_cache.clear()
+    _custom_notes.clear()
     for series, parts in _draft.items():
-        # Части из split_by_series уже отфильтрованы, остальные фильтруем
         msgs = [_add_markup_to_prices(_filter_iphone_lines(p)) for p in parts]
         msgs = [m for m in msgs if m.strip()]
-        cache[series] = {"msgs": msgs, "updated_at": _now_msk()}
-        total = sum(len([l for l in m.split("\n") if l.strip()]) for m in msgs)
-        saved.append(f"iPhone {series}: {len(msgs)} сообщ., {total} строк")
-    _save_cache(cache)
+        _preview_cache[series] = {"msgs": msgs, "updated_at": _now_msk()}
     _draft.clear()
-    await message.answer("✅ Сохранено:\n" + "\n".join(saved))
+    await _send_preview(message)
+
+
+@router.callback_query(F.data == "preview:save")
+async def cb_preview_save(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    if not _preview_cache:
+        await call.answer("Нет данных для сохранения.", show_alert=True)
+        return
+    cache = _load_cache()
+    saved = []
+    for series, entry in _preview_cache.items():
+        msgs = entry["msgs"]
+        # Применяем кастомные пометки если есть
+        if series in _custom_notes:
+            # Убираем старые пояснения из каждого msg и добавляем кастомные к последнему
+            clean_msgs = []
+            for m in msgs:
+                price_text, _ = _split_prices_and_footnotes(m)
+                clean_msgs.append(price_text.strip())
+            if clean_msgs:
+                clean_msgs[-1] = clean_msgs[-1] + "\n\n" + _custom_notes[series]
+            msgs = clean_msgs
+        cache[series] = {"msgs": msgs, "updated_at": entry["updated_at"]}
+        saved.append(f"iPhone {series}")
+    _save_cache(cache)
+    _preview_cache.clear()
+    _custom_notes.clear()
+    await call.message.edit_reply_markup()
+    await call.message.answer("✅ Сохранено: " + ", ".join(saved))
+
+
+@router.callback_query(F.data == "preview:edit_notes")
+async def cb_preview_edit_notes(call: CallbackQuery, state: FSMContext):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    series_str = ", ".join(f"iPhone {s}" for s in _preview_cache)
+    await call.message.edit_reply_markup()
+    await call.message.answer(
+        f"✏️ Пришли новый текст пометок для <b>{series_str}</b>.\n"
+        f"Он заменит стандартные пояснения во всех сериях превью.",
+        parse_mode="HTML"
+    )
+    await state.set_state(PriceNotesState.waiting_notes)
+
+
+@router.message(PriceNotesState.waiting_notes)
+async def handle_new_notes(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await state.clear()
+    new_notes = message.text or ""
+    for series in _preview_cache:
+        _custom_notes[series] = new_notes
+    await _send_preview(message)
 
 
 @router.message()

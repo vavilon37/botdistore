@@ -249,6 +249,13 @@ def new_series_back_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def preview_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сохранить", callback_data="preview:save")],
+        [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="preview:edit_notes")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
