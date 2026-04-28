@@ -2305,4 +2305,9 @@ async def handle_forwarded(message: Message):
             parse_mode="HTML"
         )
     else:
-        await message.answer("⚠️ Тип товара не определён. Поддерживаются: iPhone, MacBook Pro/Air, iMac, AirPods.")
+        preview = text[:300].replace("<", "&lt;")
+        await message.answer(
+            f"⚠️ Тип товара не определён.\n\n"
+            f"<b>Начало полученного текста:</b>\n<code>{preview}</code>",
+            parse_mode="HTML"
+        )
