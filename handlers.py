@@ -65,10 +65,19 @@ def _save_cache(cache: dict):
 
 
 def _detect_series(text: str) -> list[str]:
-    """Возвращает список всех серий найденных в тексте."""
+    """Возвращает список серий iPhone найденных в тексте.
+    Требует явный контекст iPhone: либо 'iPhone 1X', либо строка начинается с серии + модель.
+    """
     found = []
     for series in ["17", "16", "15", "14", "13", "12"]:
-        if re.search(rf"\b{series}\s*(Pro|Plus|Max|Air|mini|\d)", text):
+        # Вариант 1: явно написано "iPhone 17 ..."
+        explicit = re.search(rf"iPhone\s+{series}\b", text, re.IGNORECASE)
+        # Вариант 2: строка начинается с серии и модели (как в прайсе)
+        line_start = re.search(
+            rf"^\s*{series}\s+(Pro|Plus|Max|Air|mini|\d{{2,4}})\b",
+            text, re.IGNORECASE | re.MULTILINE
+        )
+        if explicit or line_start:
             found.append(series)
     return found
 
