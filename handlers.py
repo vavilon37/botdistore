@@ -60,11 +60,11 @@ def _detect_series(text: str) -> str | None:
 
 
 def _is_iphone_price_line(line: str) -> bool:
-    """Строка с ценой на iPhone: содержит модель + память + цену."""
-    has_price = bool(re.search(r"\d{2,3}[.\s]\d{3}", line))
-    has_model = bool(re.search(r"\b1[2-7]\s*(Pro|Plus|Max|Air|mini)", line, re.IGNORECASE))
-    has_storage = bool(re.search(r"\b(128|256|512|64|1TB|2TB|1\s*TB|2\s*TB)\b", line, re.IGNORECASE))
-    return has_price and (has_model or has_storage)
+    """Строка с ценой на iPhone: начинается с '1X ...' где X — цифра серии 2-7."""
+    # Строка должна начинаться с номера модели: 12/13/14/15/16/17 + пробел + модификатор
+    has_model_start = bool(re.match(r"^\s*1[2-7]\s*(Pro|Plus|Max|Air|mini|e\b)", line, re.IGNORECASE))
+    has_price = bool(re.search(r"\d{2,3}[.]\d{3}", line))
+    return has_model_start and has_price
 
 
 def _is_footnote_line(line: str) -> bool:
@@ -249,25 +249,23 @@ async def cb_new_series(call: CallbackQuery):
         f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
     )
 
+    # Разделяем цены и пояснения, затем разбиваем цены на chunks
     price_text, footnote_text = _split_prices_and_footnotes(entry["text"])
     chunks = _split_into_chunks(price_text)
 
-    # Первое сообщение — редактируем текущее, добавляем disclaimer
-    first = disclaimer + chunks[0]
-    kb_back = kb.new_series_back_kb() if len(chunks) == 1 else None
-    await call.message.edit_text(first, parse_mode="HTML", reply_markup=kb_back)
+    # Первое сообщение — редактируем текущее с disclaimer
+    await call.message.edit_text(disclaimer + chunks[0], parse_mode="HTML")
 
-    # Промежуточные части без кнопок
+    # Остальные части цен — без кнопок
     for chunk in chunks[1:]:
         await call.message.answer(chunk, parse_mode="HTML")
 
-    # Пояснения отдельным сообщением если есть
+    # Пояснения всегда после всех цен
     if footnote_text:
         await call.message.answer(footnote_text, parse_mode="HTML")
 
-    # Кнопка "назад" в последнем сообщении
-    if len(chunks) > 1:
-        await call.message.answer("—", reply_markup=kb.new_series_back_kb())
+    # Кнопка "назад" только в самом конце
+    await call.message.answer("◀️", reply_markup=kb.new_series_back_kb())
 
 
 @router.message(F.text.lower() == "готово")
