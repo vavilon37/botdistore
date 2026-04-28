@@ -241,15 +241,18 @@ async def cb_new_series(call: CallbackQuery):
         else:
             await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
         return
-    # Собираем все части: цены отдельно, пояснения дедуплицируем
+    # Собираем блоки цен и дедуплицируем строки пояснений
     price_blocks = []
-    all_footnotes = []
+    seen_footnote_lines = []
     for msg_text in msgs:
         price_text, footnote_text = _split_prices_and_footnotes(msg_text)
         if price_text.strip():
             price_blocks.append(price_text.strip())
-        if footnote_text.strip() and footnote_text.strip() not in all_footnotes:
-            all_footnotes.append(footnote_text.strip())
+        for line in footnote_text.split("\n"):
+            if line not in seen_footnote_lines:
+                seen_footnote_lines.append(line)
+
+    footnote_combined = "\n".join(seen_footnote_lines).strip()
 
     # Отправляем все блоки цен подряд
     for i, block in enumerate(price_blocks):
@@ -257,14 +260,13 @@ async def cb_new_series(call: CallbackQuery):
         is_last_block = (i == len(price_blocks) - 1)
         if i == 0:
             await call.message.edit_text(body, parse_mode="HTML")
-        elif is_last_block and not all_footnotes:
+        elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
         else:
             await call.message.answer(body, parse_mode="HTML")
 
-    # Одно объединённое сообщение с пояснениями + кнопка назад
-    if all_footnotes:
-        footnote_combined = "\n\n".join(all_footnotes)
+    # Одно сообщение с пояснениями + кнопка назад
+    if footnote_combined:
         await call.message.answer(footnote_combined, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
     elif not price_blocks:
         await call.message.answer("◀️", reply_markup=kb.new_series_back_kb())
