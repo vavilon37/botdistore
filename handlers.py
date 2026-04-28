@@ -53,11 +53,48 @@ def _save_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
-def _detect_series(text: str) -> str | None:
+def _detect_series(text: str) -> list[str]:
+    """Возвращает список всех серий найденных в тексте."""
+    found = []
     for series in ["17", "16", "15", "14", "13", "12"]:
         if re.search(rf"\b{series}\s*(Pro|Plus|Max|Air|mini|\d)", text):
-            return series
-    return None
+            found.append(series)
+    return found
+
+
+def _split_by_series(text: str, series_list: list[str]) -> dict[str, str]:
+    """Разбивает текст на части по сериям. Пояснения копируются в каждую серию."""
+    price_lines_by_series: dict[str, list] = {s: [] for s in series_list}
+    footnote_lines: list = []
+    in_footnote = False
+
+    for line in text.split("\n"):
+        if not in_footnote and _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote:
+            footnote_lines.append(line)
+            continue
+        if not _is_iphone_price_line(line):
+            continue
+        # Определяем к какой серии относится строка
+        matched = False
+        for s in series_list:
+            if re.match(rf"^\s*{s}\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{{2,4}}\b)", line, re.IGNORECASE):
+                price_lines_by_series[s].append(line)
+                matched = True
+                break
+        if not matched:
+            # Если не определили точно — добавляем во все серии
+            for s in series_list:
+                price_lines_by_series[s].append(line)
+
+    result = {}
+    footnote_text = "\n".join(footnote_lines).strip()
+    for s in series_list:
+        prices = "\n".join(price_lines_by_series[s]).strip()
+        if prices:
+            result[s] = prices + ("\n\n" + footnote_text if footnote_text else "")
+    return result
 
 
 _EXCLUDE_LINE_PATTERNS = re.compile(
@@ -1428,7 +1465,9 @@ async def handle_done(message: Message):
     cache = _load_cache()
     saved = []
     for series, parts in _draft.items():
+        # Части из split_by_series уже отфильтрованы, остальные фильтруем
         msgs = [_add_markup_to_prices(_filter_iphone_lines(p)) for p in parts]
+        msgs = [m for m in msgs if m.strip()]
         cache[series] = {"msgs": msgs, "updated_at": _now_msk()}
         total = sum(len([l for l in m.split("\n") if l.strip()]) for m in msgs)
         saved.append(f"iPhone {series}: {len(msgs)} сообщ., {total} строк")
@@ -1448,18 +1487,32 @@ async def handle_forwarded(message: Message):
     if not text:
         await message.answer("❌ Сообщение не содержит текста.")
         return
-    series = _detect_series(text)
-    if not series:
+    series_list = _detect_series(text)
+    if not series_list:
         await message.answer("⚠️ Серия iPhone не определена в этом сообщении.")
         return
 
-    if series not in _draft:
-        _draft[series] = []
-    _draft[series].append(text)
-
-    part_num = len(_draft[series])
-    await message.answer(
-        f"✅ Часть {part_num} принята — iPhone {series}\n"
-        f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
-        parse_mode="HTML"
-    )
+    if len(series_list) == 1:
+        s = series_list[0]
+        if s not in _draft:
+            _draft[s] = []
+        _draft[s].append(text)
+        part_num = len(_draft[s])
+        await message.answer(
+            f"✅ Часть {part_num} принята — iPhone {s}\n"
+            f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
+    else:
+        # Несколько серий в одном сообщении — разбиваем сразу
+        split = _split_by_series(text, series_list)
+        for s, s_text in split.items():
+            if s not in _draft:
+                _draft[s] = []
+            _draft[s].append(s_text)
+        names = ", ".join(f"iPhone {s}" for s in split)
+        await message.answer(
+            f"✅ Разбито на серии: {names}\n"
+            f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
