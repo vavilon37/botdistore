@@ -30,6 +30,11 @@ _preview_cache: dict = {}
 # Кастомные пометки для серий: {series: str}
 _custom_notes: dict = {}
 
+# Буферы для наушников
+_hp_draft: dict = {}
+_hp_preview_cache: dict = {}
+_hp_custom_notes: dict = {}
+
 
 # Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
 _KEEP_FOOTNOTE_PATTERNS = [
@@ -131,6 +136,85 @@ def _is_footnote_line(line: str) -> bool:
     return False
 
 
+HEADPHONES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "headphones_cache.json")
+
+# Категории наушников: ключ → (display_name, паттерны для определения из текста)
+HP_CATEGORIES = {
+    "airpods": ("AirPods", re.compile(r"\bAirPods\s*[234]\b|\bAirPods\s+4\b", re.IGNORECASE)),
+    "airpods_pro": ("AirPods Pro", re.compile(r"AirPods\s+Pro", re.IGNORECASE)),
+    "airpods_max": ("AirPods Max", re.compile(r"AirPods\s+Max", re.IGNORECASE)),
+}
+
+_HP_EXCLUDE = re.compile(
+    r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
+    r"|уцен|замена|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
+    r"|состояние|б/у|БУ\b|used|refurb|витрин",
+    re.IGNORECASE
+)
+
+
+def _is_headphones_price_line(line: str) -> bool:
+    if _HP_EXCLUDE.search(line):
+        return False
+    has_model = bool(re.search(r"AirPods", line, re.IGNORECASE))
+    has_price = bool(re.search(r"\d{1,3}[.]\d{3}", line))
+    return has_model and has_price
+
+
+def _detect_hp_categories(text: str) -> list[str]:
+    found = []
+    for key, (_, pattern) in HP_CATEGORIES.items():
+        if pattern.search(text):
+            found.append(key)
+    # Убираем дубли: если найден airpods_pro/max — не считаем просто airpods
+    if "airpods_pro" in found and "airpods" in found:
+        found.remove("airpods")
+    if "airpods_max" in found and "airpods" in found:
+        found.remove("airpods")
+    return found
+
+
+def _filter_headphones_lines(text: str) -> str:
+    lines = text.split("\n")
+    result = []
+    in_footnote = False
+    for line in lines:
+        if _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote or _is_headphones_price_line(line):
+            result.append(line)
+    while result and not result[0].strip():
+        result.pop(0)
+    return "\n".join(result)
+
+
+def _add_markup_to_hp_prices(text: str) -> str:
+    price_pattern = re.compile(r"(\d{1,3})[.](\d{3})")
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if _is_headphones_price_line(line):
+            def replace_price(m):
+                price = int(m.group(1)) * 1000 + int(m.group(2))
+                new_price = price + PRICE_MARKUP
+                return f"{new_price // 1000}.{new_price % 1000:03d}"
+            line = price_pattern.sub(replace_price, line)
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_hp_cache() -> dict:
+    if os.path.exists(HEADPHONES_CACHE_FILE):
+        with open(HEADPHONES_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_hp_cache(cache: dict):
+    with open(HEADPHONES_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -214,6 +298,10 @@ class FilterState(StatesGroup):
 
 
 class PriceNotesState(StatesGroup):
+    waiting_notes = State()
+
+
+class HpPriceNotesState(StatesGroup):
     waiting_notes = State()
 
 
@@ -466,20 +554,80 @@ async def cmd_macs(message: Message):
 @router.message(F.text == "🎧 Наушники")
 async def cmd_headphones(message: Message):
     await message.answer(
-        "🎧 Наушники Apple — цены у @idistoreman\n\n"
-        "AirPods 2 (2019) — ⚪\n"
-        "AirPods 3 (2021) — ⚪\n"
-        "AirPods 4 (2024) — ⚪\n"
-        "AirPods 4 ANC (2024) — ⚪\n\n"
-        "AirPods Pro 1 (2019) — ⚪\n"
-        "AirPods Pro 2 Lightning (2022) — ⚪\n"
-        "AirPods Pro 2 USB-C (2023) — ⚪\n"
-        "AirPods Pro 3 (2025) — ⚪\n\n"
-        "AirPods Max 1 Lightning (2020) — 🟤 ⚪ 🩵 🟢 🩷\n"
-        "AirPods Max 1 USB-C (2024) — 🖤 🤍 🔵 🟣 🟠\n"
-        "AirPods Max 2 (2026) — 🖤 🤍 🔵 🟣 🟠",
-        reply_markup=kb.main_menu()
+        "🎧 Наушники Apple — выберите категорию:",
+        reply_markup=kb.headphones_type_kb()
     )
+
+
+@router.callback_query(F.data.startswith("hp_cat:"))
+async def cb_hp_category(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cat_key = call.data.split(":")[1]
+    if cat_key == "back":
+        await call.message.edit_text(
+            "🎧 Наушники Apple — выберите категорию:",
+            reply_markup=kb.headphones_type_kb()
+        )
+        return
+
+    cat_name = HP_CATEGORIES.get(cat_key, (cat_key,))[0]
+    cache = _load_hp_cache()
+    entry = cache.get(cat_key)
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not entry:
+        if is_admin:
+            await call.answer(
+                f"⚠️ Цены {cat_name} не загружены. Перешлите сообщение из канала поставщика.",
+                show_alert=True
+            )
+        else:
+            await call.answer(
+                "Цены временно недоступны. Напишите администратору @idistoreman",
+                show_alert=True
+            )
+        return
+
+    updated = entry.get("updated_at", "—")
+    disclaimer = (
+        f"⚠️ Цены актуальны на момент последнего обновления. "
+        f"Для уточнения пишите @idistoreman\n\n"
+        f"🎧 <b>{cat_name}</b>  🕐 {updated}\n\n"
+    )
+    msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
+    if not msgs:
+        if is_admin:
+            await call.answer(f"⚠️ Цены {cat_name} не загружены.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    price_blocks = []
+    seen_footnote_lines = []
+    for msg_text in msgs:
+        price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+        if price_text.strip():
+            price_blocks.append(price_text.strip())
+        for line in footnote_text.split("\n"):
+            if line not in seen_footnote_lines:
+                seen_footnote_lines.append(line)
+
+    footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+    for i, block in enumerate(price_blocks):
+        body = (disclaimer if i == 0 else "") + block
+        is_last_block = (i == len(price_blocks) - 1)
+        if i == 0:
+            await call.message.edit_text(body, parse_mode="HTML")
+        elif is_last_block and not footnote_combined:
+            await call.message.answer(body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
+        else:
+            await call.message.answer(body, parse_mode="HTML")
+
+    if footnote_combined:
+        await call.message.answer(footnote_combined, parse_mode="HTML", reply_markup=kb.hp_back_kb())
+    elif not price_blocks:
+        await call.message.answer("◀️", reply_markup=kb.hp_back_kb())
 
 
 @router.message(F.text.in_(MENU_CATEGORY_MAP))
@@ -1466,6 +1614,46 @@ async def cb_pmodel_select(call: CallbackQuery):
     await _pf_send_list(call.bot, call.message.chat.id, uid, filtered)
 
 
+async def _send_hp_preview(message: Message):
+    """Отправляет превью прайса наушников из _hp_preview_cache с кнопками."""
+    await message.answer("👁 <b>Превью наушников — так увидит пользователь:</b>", parse_mode="HTML")
+    for cat_key, entry in _hp_preview_cache.items():
+        cat_name = HP_CATEGORIES[cat_key][0]
+        msgs = entry["msgs"]
+        updated = entry["updated_at"]
+        disclaimer = (
+            f"⚠️ Цены актуальны на момент последнего обновления. "
+            f"Для уточнения пишите @idistoreman\n\n"
+            f"🎧 <b>{cat_name}</b>  🕐 {updated}\n\n"
+        )
+        price_blocks = []
+        seen_footnote_lines = []
+        for msg_text in msgs:
+            price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+            if price_text.strip():
+                price_blocks.append(price_text.strip())
+            for line in footnote_text.split("\n"):
+                if line not in seen_footnote_lines:
+                    seen_footnote_lines.append(line)
+
+        if cat_key in _hp_custom_notes:
+            footnote_combined = _hp_custom_notes[cat_key].strip()
+        else:
+            footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+        for i, block in enumerate(price_blocks):
+            body = (disclaimer if i == 0 else "") + block
+            await message.answer(body, parse_mode="HTML")
+
+        if footnote_combined:
+            await message.answer(footnote_combined, parse_mode="HTML")
+
+    await message.answer(
+        "Как выглядит? Сохранить или изменить пометки?",
+        reply_markup=kb.hp_preview_kb()
+    )
+
+
 async def _send_preview(message: Message):
     """Отправляет превью прайса из _preview_cache с кнопками."""
     await message.answer("👁 <b>Превью — так увидит пользователь:</b>", parse_mode="HTML")
@@ -1504,6 +1692,80 @@ async def _send_preview(message: Message):
         "Как выглядит? Сохранить или изменить пометки?",
         reply_markup=kb.preview_kb()
     )
+
+
+@router.message(F.text.lower() == "готово наушники")
+async def handle_hp_done(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not _hp_draft:
+        await message.answer("Нет накопленных сообщений для наушников.")
+        return
+    _hp_preview_cache.clear()
+    _hp_custom_notes.clear()
+    for cat_key, parts in _hp_draft.items():
+        msgs = [_add_markup_to_hp_prices(_filter_headphones_lines(p)) for p in parts]
+        msgs = [m for m in msgs if m.strip()]
+        _hp_preview_cache[cat_key] = {"msgs": msgs, "updated_at": _now_msk()}
+    _hp_draft.clear()
+    await _send_hp_preview(message)
+
+
+@router.callback_query(F.data == "hp_preview:save")
+async def cb_hp_preview_save(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    if not _hp_preview_cache:
+        await call.answer("Нет данных для сохранения.", show_alert=True)
+        return
+    cache = _load_hp_cache()
+    saved = []
+    for cat_key, entry in _hp_preview_cache.items():
+        msgs = entry["msgs"]
+        if cat_key in _hp_custom_notes:
+            clean_msgs = []
+            for m in msgs:
+                price_text, _ = _split_prices_and_footnotes(m)
+                clean_msgs.append(price_text.strip())
+            if clean_msgs:
+                clean_msgs[-1] = clean_msgs[-1] + "\n\n" + _hp_custom_notes[cat_key]
+            msgs = clean_msgs
+        cache[cat_key] = {"msgs": msgs, "updated_at": entry["updated_at"]}
+        saved.append(HP_CATEGORIES[cat_key][0])
+    _save_hp_cache(cache)
+    _hp_preview_cache.clear()
+    _hp_custom_notes.clear()
+    await call.message.edit_reply_markup()
+    await call.message.answer("✅ Сохранено: " + ", ".join(saved))
+
+
+@router.callback_query(F.data == "hp_preview:edit_notes")
+async def cb_hp_preview_edit_notes(call: CallbackQuery, state: FSMContext):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    cats_str = ", ".join(HP_CATEGORIES[c][0] for c in _hp_preview_cache)
+    await call.message.edit_reply_markup()
+    await call.message.answer(
+        f"✏️ Пришли новый текст пометок для <b>{cats_str}</b>.\n"
+        f"Он заменит стандартные пояснения во всех категориях превью.",
+        parse_mode="HTML"
+    )
+    await state.set_state(HpPriceNotesState.waiting_notes)
+
+
+@router.message(HpPriceNotesState.waiting_notes)
+async def handle_hp_new_notes(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await state.clear()
+    new_notes = message.text or ""
+    for cat_key in _hp_preview_cache:
+        _hp_custom_notes[cat_key] = new_notes
+    await _send_hp_preview(message)
 
 
 @router.message(F.text.lower() == "готово")
@@ -1593,32 +1855,48 @@ async def handle_forwarded(message: Message):
     if not text:
         await message.answer("❌ Сообщение не содержит текста.")
         return
-    series_list = _detect_series(text)
-    if not series_list:
-        await message.answer("⚠️ Серия iPhone не определена в этом сообщении.")
-        return
 
-    if len(series_list) == 1:
-        s = series_list[0]
-        if s not in _draft:
-            _draft[s] = []
-        _draft[s].append(text)
-        part_num = len(_draft[s])
+    # Пробуем определить — наушники или iPhone
+    hp_cats = _detect_hp_categories(text)
+    series_list = _detect_series(text)
+
+    if hp_cats:
+        # Наушники
+        for cat in hp_cats:
+            if cat not in _hp_draft:
+                _hp_draft[cat] = []
+            _hp_draft[cat].append(text)
+        names = ", ".join(HP_CATEGORIES[c][0] for c in hp_cats)
+        total_parts = max(len(_hp_draft[c]) for c in hp_cats)
         await message.answer(
-            f"✅ Часть {part_num} принята — iPhone {s}\n"
-            f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+            f"✅ Часть {total_parts} принята — {names}\n"
+            f"Пересылай ещё или напиши <b>готово наушники</b> чтобы сохранить.",
             parse_mode="HTML"
         )
-    else:
-        # Несколько серий в одном сообщении — разбиваем сразу
-        split = _split_by_series(text, series_list)
-        for s, s_text in split.items():
+    elif series_list:
+        # iPhone
+        if len(series_list) == 1:
+            s = series_list[0]
             if s not in _draft:
                 _draft[s] = []
-            _draft[s].append(s_text)
-        names = ", ".join(f"iPhone {s}" for s in split)
-        await message.answer(
-            f"✅ Разбито на серии: {names}\n"
-            f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
-            parse_mode="HTML"
-        )
+            _draft[s].append(text)
+            part_num = len(_draft[s])
+            await message.answer(
+                f"✅ Часть {part_num} принята — iPhone {s}\n"
+                f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+                parse_mode="HTML"
+            )
+        else:
+            split = _split_by_series(text, series_list)
+            for s, s_text in split.items():
+                if s not in _draft:
+                    _draft[s] = []
+                _draft[s].append(s_text)
+            names = ", ".join(f"iPhone {s}" for s in split)
+            await message.answer(
+                f"✅ Разбито на серии: {names}\n"
+                f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+                parse_mode="HTML"
+            )
+    else:
+        await message.answer("⚠️ Серия iPhone или категория наушников не определена в этом сообщении.")

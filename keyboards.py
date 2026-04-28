@@ -256,6 +256,27 @@ def preview_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def headphones_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎵 AirPods", callback_data="hp_cat:airpods")],
+        [InlineKeyboardButton(text="🎧 AirPods Pro", callback_data="hp_cat:airpods_pro")],
+        [InlineKeyboardButton(text="🎼 AirPods Max", callback_data="hp_cat:airpods_max")],
+    ])
+
+
+def hp_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к наушникам", callback_data="hp_cat:back")],
+    ])
+
+
+def hp_preview_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сохранить", callback_data="hp_preview:save")],
+        [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="hp_preview:edit_notes")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

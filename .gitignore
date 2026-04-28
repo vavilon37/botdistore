@@ -4,3 +4,4 @@ __pycache__/
 *.db
 *.pyc
 price_cache.json
+headphones_cache.json
