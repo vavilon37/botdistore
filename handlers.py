@@ -104,12 +104,6 @@ _EXCLUDE_LINE_PATTERNS = re.compile(
     re.IGNORECASE
 )
 
-# Если сообщение содержит эти слова — игнорируем его целиком
-_EXCLUDE_MESSAGE_PATTERNS = re.compile(
-    r"уценк|уцен\b",
-    re.IGNORECASE
-)
-
 
 def _is_iphone_price_line(line: str) -> bool:
     """Строка с ценой на iPhone: начинается с номера серии 12-17."""
@@ -1494,9 +1488,6 @@ async def handle_forwarded(message: Message):
     text = message.text or message.caption or ""
     if not text:
         await message.answer("❌ Сообщение не содержит текста.")
-        return
-    if _EXCLUDE_MESSAGE_PATTERNS.search(text):
-        await message.answer("⏭ Сообщение с уценкой — пропущено.")
         return
     series_list = _detect_series(text)
     if not series_list:
