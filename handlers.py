@@ -15,6 +15,24 @@ import keyboards as kb
 PRICE_CACHE_FILE = os.path.join(os.path.dirname(__file__), "price_cache.json")
 PRICE_MARKUP = 2000
 
+# Буфер накопления частей прайса от админа: {series: {"parts": [text, ...], "updated_at": ...}}
+_pending_parts: dict = {}
+
+# Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
+_KEEP_FOOTNOTE_PATTERNS = [
+    r"🚘",
+    r"^\*\s*—",
+    r"^Act",
+    r"📱\s*Только",
+    r"eSIM\s*\+",
+    r"физическ",
+    r"🚩",
+    r"^\s*🇧🇭",
+    r"^\s*🇪🇺",
+    r"^\s*🇨🇳",
+    r"iPhone\s+1[2-9]\s+Air",
+]
+
 
 def _load_cache() -> dict:
     if os.path.exists(PRICE_CACHE_FILE):
@@ -29,27 +47,54 @@ def _save_cache(cache: dict):
 
 
 def _detect_series(text: str) -> str | None:
-    """Определяет серию iPhone (12-17) по тексту сообщения."""
     for series in ["17", "16", "15", "14", "13", "12"]:
         if re.search(rf"\b{series}\s*(Pro|Plus|Max|Air|mini|\d)", text):
             return series
     return None
 
 
-def _add_markup_to_prices(text: str) -> str:
-    """Добавляет PRICE_MARKUP к каждой цене в строках с iPhone."""
+def _is_iphone_price_line(line: str) -> bool:
+    """Строка с ценой на iPhone: содержит модель + память + цену."""
+    has_price = bool(re.search(r"\d{2,3}[.\s]\d{3}", line))
+    has_model = bool(re.search(r"\b1[2-7]\s*(Pro|Plus|Max|Air|mini)", line, re.IGNORECASE))
+    has_storage = bool(re.search(r"\b(128|256|512|64|1TB|2TB|1\s*TB|2\s*TB)\b", line, re.IGNORECASE))
+    return has_price and (has_model or has_storage)
+
+
+def _is_footnote_line(line: str) -> bool:
+    """Строки-пояснения в конце сообщения — сохраняем."""
+    for pat in _KEEP_FOOTNOTE_PATTERNS:
+        if re.search(pat, line):
+            return True
+    return False
+
+
+def _filter_iphone_lines(text: str) -> str:
+    """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
     result = []
-    # Паттерн: строка содержит модель iPhone и цену вида 100.300 или 100300
-    price_pattern = re.compile(r"(\d{2,3})[\.\s]?(\d{3})")
-
+    in_footnote = False
     for line in lines:
-        # Обрабатываем только строки где есть модель + цена (содержат цифры серии и дефис перед ценой)
-        if re.search(r"\d{2,3}[\.\s]?\d{3}", line) and re.search(r"(Pro|Plus|Max|Air|mini|\d{2,3}\s*(GB|TB))", line, re.IGNORECASE):
+        if _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote or _is_iphone_price_line(line):
+            result.append(line)
+    # Убираем пустые строки в начале
+    while result and not result[0].strip():
+        result.pop(0)
+    return "\n".join(result)
+
+
+def _add_markup_to_prices(text: str) -> str:
+    """Добавляет PRICE_MARKUP к ценам в строках с iPhone."""
+    price_pattern = re.compile(r"(\d{2,3})[.\s](\d{3})")
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if _is_iphone_price_line(line):
             def replace_price(m):
                 price = int(m.group(1)) * 1000 + int(m.group(2))
                 new_price = price + PRICE_MARKUP
-                # Форматируем обратно как было: 102.300
                 return f"{new_price // 1000}.{new_price % 1000:03d}"
             line = price_pattern.sub(replace_price, line)
         result.append(line)
@@ -139,18 +184,58 @@ async def cb_new_type_back(call: CallbackQuery):
 
 @router.callback_query(F.data.startswith("new_series:"))
 async def cb_new_series(call: CallbackQuery):
+    from bot import ADMIN_IDS
     series = call.data.split(":")[1]
     cache = _load_cache()
     entry = cache.get(series)
+    is_admin = call.from_user.id in ADMIN_IDS
     if not entry:
-        await call.answer(
-            f"Цены на iPhone {series} пока не загружены.\nПерешлите боту сообщение из канала поставщика.",
-            show_alert=True
-        )
+        if is_admin:
+            await call.answer(
+                f"⚠️ Цены iPhone {series} не загружены. Перешлите сообщение из канала поставщика.",
+                show_alert=True
+            )
+        else:
+            await call.answer(
+                f"Цены временно недоступны. Напишите администратору @idistoreman",
+                show_alert=True
+            )
         return
     updated = entry.get("updated_at", "—")
-    text = f"📱 <b>iPhone {series}</b>\n🕐 Обновлено: {updated}\n\n{entry['text']}"
+    text = (
+        f"⚠️ Цены актуальны на момент последнего обновления. "
+        f"Для уточнения пишите @idistoreman\n\n"
+        f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
+        f"{entry['text']}"
+    )
+    if len(text) > 4096:
+        text = text[:4090] + "\n..."
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
+
+
+@router.message(F.text.lower() == "готово")
+async def handle_done(message: Message):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not _pending_parts:
+        await message.answer("Нет накопленных частей прайса.")
+        return
+    cache = _load_cache()
+    saved = []
+    for series, data in _pending_parts.items():
+        combined = "\n\n".join(data["parts"])
+        filtered = _filter_iphone_lines(combined)
+        marked = _add_markup_to_prices(filtered)
+        cache[series] = {
+            "text": marked,
+            "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+        }
+        line_count = len([l for l in marked.split("\n") if l.strip()])
+        saved.append(f"iPhone {series}: {line_count} строк")
+    _save_cache(cache)
+    _pending_parts.clear()
+    await message.answer("✅ Сохранено:\n" + "\n".join(saved))
 
 
 @router.message(F.forward_from_chat | F.forward_origin)
@@ -165,17 +250,18 @@ async def handle_forwarded(message: Message):
     series = _detect_series(text)
     if not series:
         return
-    marked_text = _add_markup_to_prices(text)
-    cache = _load_cache()
-    cache[series] = {
-        "text": marked_text,
-        "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
-    }
-    _save_cache(cache)
-    line_count = len([l for l in marked_text.split("\n") if l.strip()])
+
+    filtered = _filter_iphone_lines(text)
+    if series not in _pending_parts:
+        _pending_parts[series] = {"parts": []}
+    _pending_parts[series]["parts"].append(filtered)
+
+    part_num = len(_pending_parts[series]["parts"])
+    line_count = len([l for l in filtered.split("\n") if l.strip()])
     await message.answer(
-        f"✅ Цены iPhone {series} обновлены ({cache[series]['updated_at']})\n"
-        f"Строк в сообщении: {line_count}"
+        f"✅ Часть {part_num} принята — iPhone {series} ({line_count} строк)\n"
+        f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+        parse_mode="HTML"
     )
 
 
