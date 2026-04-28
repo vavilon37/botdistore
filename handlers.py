@@ -1897,8 +1897,9 @@ async def handle_forwarded(message: Message):
         return
 
     # Пробуем определить — наушники или iPhone
-    hp_cats = _detect_hp_categories(text)
+    # iPhone имеет приоритет: если найдена серия — это iPhone-сообщение
     series_list = _detect_series(text)
+    hp_cats = [] if series_list else _detect_hp_categories(text)
 
     if hp_cats:
         # Разбиваем сообщение по категориям сразу
