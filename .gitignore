@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 price_cache.json
 headphones_cache.json
+mac_cache.json

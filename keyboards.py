@@ -277,6 +277,27 @@ def hp_preview_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def macs_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💻 MacBook Pro", callback_data="mac_cat:macbook_pro")],
+        [InlineKeyboardButton(text="💻 MacBook Air", callback_data="mac_cat:macbook_air")],
+        [InlineKeyboardButton(text="🖥 iMac", callback_data="mac_cat:imac")],
+    ])
+
+
+def mac_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к макам", callback_data="mac_cat:back")],
+    ])
+
+
+def mac_preview_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сохранить", callback_data="mac_preview:save")],
+        [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="mac_preview:edit_notes")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

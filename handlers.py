@@ -35,6 +35,11 @@ _hp_draft: dict = {}
 _hp_preview_cache: dict = {}
 _hp_custom_notes: dict = {}
 
+# Буферы для маков
+_mac_draft: dict = {}
+_mac_preview_cache: dict = {}
+_mac_custom_notes: dict = {}
+
 
 # Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
 _KEEP_FOOTNOTE_PATTERNS = [
@@ -263,6 +268,139 @@ def _save_hp_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+MAC_CACHE_FILE = os.path.join(os.path.dirname(__file__), "mac_cache.json")
+
+MAC_CATEGORIES = {
+    "macbook_pro": "MacBook Pro",
+    "macbook_air": "MacBook Air",
+    "imac": "iMac",
+}
+
+# Наценка зависит от цены: >=100000 → +4000, иначе +2000
+MAC_MARKUP_HIGH = 4000
+MAC_MARKUP_LOW = 2000
+MAC_MARKUP_THRESHOLD = 100000
+
+_MAC_EXCLUDE = re.compile(
+    r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин",
+    re.IGNORECASE
+)
+
+# Паттерн цены для маков: -173.000 или — 143000 или -125.500
+_MAC_PRICE_RE = re.compile(r"[-—]\s*(\d{2,3})[.\s]?(\d{3})\b")
+
+
+def _parse_mac_price(line: str) -> int | None:
+    """Извлекает цену из строки мака. Возвращает цену в рублях или None."""
+    m = _MAC_PRICE_RE.search(line)
+    if not m:
+        return None
+    major = int(m.group(1))
+    minor_str = m.group(2)
+    minor = int(minor_str)
+    # Если major >= 100 и minor — это просто тысячи без дробной части (напр. 143000 → 143 + 000)
+    return major * 1000 + minor
+
+
+def _is_mac_price_line(line: str) -> bool:
+    if _MAC_EXCLUDE.search(line):
+        return False
+    has_price = bool(_MAC_PRICE_RE.search(line))
+    if not has_price:
+        return False
+    # Должна содержать MacBook Pro, MacBook Air, Air, iMac, NEO или артикул модели
+    has_model = bool(re.search(
+        r"MacBook\s+(Pro|Air)|(?<!\w)Air\s+1[35]\b|(?<!\w)NEO\b|iMac\s+M\d|"
+        r"\b[A-Z]{2,4}\d{2,4}[A-Z]?\d?\b",  # артикулы типа MGDN4, MDE04, MWUC3
+        line, re.IGNORECASE
+    ))
+    return has_model
+
+
+def _classify_mac_line(line: str) -> str | None:
+    """Возвращает ключ категории мака для строки или None."""
+    if not _is_mac_price_line(line):
+        return None
+    if re.search(r"MacBook\s+Pro|MBP", line, re.IGNORECASE):
+        return "macbook_pro"
+    if re.search(r"MacBook\s+Air|(?<!\w)Air\s+1[35]\b|NEO\b", line, re.IGNORECASE):
+        return "macbook_air"
+    if re.search(r"iMac", line, re.IGNORECASE):
+        return "imac"
+    # Артикул без явного названия — смотрим по контексту (не определить точно)
+    return None
+
+
+def _detect_mac_categories(text: str) -> list[str]:
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_mac_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
+
+
+def _split_mac_by_category(text: str) -> dict[str, str]:
+    """Разбивает текст на части по категориям маков."""
+    lines_by_cat: dict[str, list] = {k: [] for k in MAC_CATEGORIES}
+    footnote_lines: list = []
+    in_footnote = False
+
+    for line in text.split("\n"):
+        if not in_footnote and _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote:
+            footnote_lines.append(line)
+            continue
+        cat = _classify_mac_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+
+    footnote_text = "\n".join(footnote_lines).strip()
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            prices = "\n".join(lines).strip()
+            result[cat] = prices + ("\n\n" + footnote_text if footnote_text else "")
+    return result
+
+
+def _add_markup_to_mac_prices(text: str) -> str:
+    def replace_price(m):
+        major = int(m.group(1))
+        minor = int(m.group(2))
+        price = major * 1000 + minor
+        markup = MAC_MARKUP_HIGH if price >= MAC_MARKUP_THRESHOLD else MAC_MARKUP_LOW
+        new_price = price + markup
+        sep = m.group(0)[m.group(0).index(m.group(1)) - 1] if m.group(1) in m.group(0) else "."
+        # Сохраняем формат: если было с точкой — оставляем с точкой
+        original = m.group(0)
+        if "." in original:
+            return original[:original.index(m.group(1))] + f"{new_price // 1000}.{new_price % 1000:03d}"
+        else:
+            return original[:original.index(m.group(1))] + f"{new_price // 1000}{new_price % 1000:03d}"
+
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if _is_mac_price_line(line):
+            line = _MAC_PRICE_RE.sub(replace_price, line)
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_mac_cache() -> dict:
+    if os.path.exists(MAC_CACHE_FILE):
+        with open(MAC_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_mac_cache(cache: dict):
+    with open(MAC_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -350,6 +488,10 @@ class PriceNotesState(StatesGroup):
 
 
 class HpPriceNotesState(StatesGroup):
+    waiting_notes = State()
+
+
+class MacPriceNotesState(StatesGroup):
     waiting_notes = State()
 
 
@@ -559,44 +701,6 @@ async def cmd_smartphones_bu(message: Message):
     user_filters.setdefault(uid, {})["phone_cond"] = "used"
     await message.answer("Б/У смартфоны — выберите раздел:", reply_markup=kb.smartphones_kb("used"))
 
-
-@router.message(F.text == "🖥 Маки")
-async def cmd_macs(message: Message):
-    await message.answer(
-        "🖥 Mac — цены у @idistoreman\n\n"
-        "💻 MacBook Air\n"
-        "MacBook Air 13\" M1 (2020) — 🩶 🟡 ⚪\n"
-        "MacBook Air 13\" M2 (2022) — 🖤 🤍 🩶 ⚪\n"
-        "MacBook Air 15\" M2 (2023) — 🖤 🤍 🩶 ⚪\n"
-        "MacBook Air 13\" M3 (2024) — 🖤 🤍 🩶 ⚪ 🩵\n"
-        "MacBook Air 15\" M3 (2024) — 🖤 🤍 🩶 ⚪ 🩵\n"
-        "MacBook Air 13\" M5 (2026) — 🩵 🖤 🤍 ⚪\n"
-        "MacBook Air 15\" M5 (2026) — 🩵 🖤 🤍 ⚪\n\n"
-        "💻 MacBook Pro\n"
-        "MacBook Pro 14\" M1 Pro/Max (2021) — 🩶 ⚪\n"
-        "MacBook Pro 16\" M1 Pro/Max (2021) — 🩶 ⚪\n"
-        "MacBook Pro 14\" M2 Pro/Max (2023) — 🩶 ⚪\n"
-        "MacBook Pro 16\" M2 Pro/Max (2023) — 🩶 ⚪\n"
-        "MacBook Pro 14\" M3/Pro/Max (2023) — 🖤 ⚪\n"
-        "MacBook Pro 16\" M3 Pro/Max (2023) — 🖤 ⚪\n"
-        "MacBook Pro 14\" M4/Pro/Max (2024) — 🖤 ⚪\n"
-        "MacBook Pro 16\" M4 Pro/Max (2024) — 🖤 ⚪\n"
-        "MacBook Pro 14\" M5/Pro/Max (2025-2026) — 🖤 ⚪\n"
-        "MacBook Pro 16\" M5 Pro/Max (2026) — 🖤 ⚪\n\n"
-        "🖥 iMac\n"
-        "iMac 24\" M1 (2021) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n"
-        "iMac 24\" M3 (2023) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n"
-        "iMac 24\" M4 (2024) — 🔵 🟢 🩷 🟣 🟡 🟠 ⚪\n\n"
-        "🖥 Mac mini\n"
-        "Mac mini M1 (2020) — ⚪\n"
-        "Mac mini M2/M2 Pro (2023) — ⚪\n"
-        "Mac mini M4/M4 Pro (2024) — ⚪\n\n"
-        "🖥 Mac Studio\n"
-        "Mac Studio M1 Max/Ultra (2022) — ⚪\n"
-        "Mac Studio M2 Max/Ultra (2023) — ⚪\n"
-        "Mac Studio M4 Max/M3 Ultra (2025) — ⚪",
-        reply_markup=kb.main_menu()
-    )
 
 
 @router.message(F.text == "🎧 Наушники")
@@ -1893,6 +1997,187 @@ async def handle_new_notes(message: Message, state: FSMContext):
     await _send_preview(message)
 
 
+async def _send_mac_preview(message: Message):
+    await message.answer("👁 <b>Превью маков — так увидит пользователь:</b>", parse_mode="HTML")
+    for cat_key, entry in _mac_preview_cache.items():
+        cat_name = MAC_CATEGORIES[cat_key]
+        msgs = entry["msgs"]
+        updated = entry["updated_at"]
+        disclaimer = (
+            f"⚠️ Цены актуальны на момент последнего обновления. "
+            f"Для уточнения пишите @idistoreman\n\n"
+            f"💻 <b>{cat_name}</b>  🕐 {updated}\n\n"
+        )
+        price_blocks = []
+        seen_footnote_lines = []
+        for msg_text in msgs:
+            price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+            if price_text.strip():
+                price_blocks.append(price_text.strip())
+            for line in footnote_text.split("\n"):
+                if line not in seen_footnote_lines:
+                    seen_footnote_lines.append(line)
+
+        if cat_key in _mac_custom_notes:
+            footnote_combined = _mac_custom_notes[cat_key].strip()
+        else:
+            footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+        for i, block in enumerate(price_blocks):
+            body = (disclaimer if i == 0 else "") + block
+            await message.answer(body, parse_mode="HTML")
+        if footnote_combined:
+            await message.answer(footnote_combined, parse_mode="HTML")
+
+    await message.answer(
+        "Как выглядит? Сохранить или изменить пометки?",
+        reply_markup=kb.mac_preview_kb()
+    )
+
+
+@router.message(F.text.lower() == "готово маки")
+async def handle_mac_done(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not _mac_draft:
+        await message.answer("Нет накопленных сообщений для маков.")
+        return
+    _mac_preview_cache.clear()
+    _mac_custom_notes.clear()
+    for cat_key, parts in _mac_draft.items():
+        msgs = [_add_markup_to_mac_prices(p) for p in parts]
+        msgs = [m for m in msgs if m.strip()]
+        _mac_preview_cache[cat_key] = {"msgs": msgs, "updated_at": _now_msk()}
+    _mac_draft.clear()
+    await _send_mac_preview(message)
+
+
+@router.callback_query(F.data == "mac_preview:save")
+async def cb_mac_preview_save(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    if not _mac_preview_cache:
+        await call.answer("Нет данных для сохранения.", show_alert=True)
+        return
+    cache = _load_mac_cache()
+    saved = []
+    for cat_key, entry in _mac_preview_cache.items():
+        msgs = entry["msgs"]
+        if cat_key in _mac_custom_notes:
+            clean_msgs = []
+            for m in msgs:
+                price_text, _ = _split_prices_and_footnotes(m)
+                clean_msgs.append(price_text.strip())
+            if clean_msgs:
+                clean_msgs[-1] = clean_msgs[-1] + "\n\n" + _mac_custom_notes[cat_key]
+            msgs = clean_msgs
+        cache[cat_key] = {"msgs": msgs, "updated_at": entry["updated_at"]}
+        saved.append(MAC_CATEGORIES[cat_key])
+    _save_mac_cache(cache)
+    _mac_preview_cache.clear()
+    _mac_custom_notes.clear()
+    await call.message.edit_reply_markup()
+    await call.message.answer("✅ Сохранено: " + ", ".join(saved))
+
+
+@router.callback_query(F.data == "mac_preview:edit_notes")
+async def cb_mac_preview_edit_notes(call: CallbackQuery, state: FSMContext):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    cats_str = ", ".join(MAC_CATEGORIES[c] for c in _mac_preview_cache)
+    await call.message.edit_reply_markup()
+    await call.message.answer(
+        f"✏️ Пришли новый текст пометок для <b>{cats_str}</b>.\n"
+        f"Он заменит стандартные пояснения во всех категориях превью.",
+        parse_mode="HTML"
+    )
+    await state.set_state(MacPriceNotesState.waiting_notes)
+
+
+@router.message(MacPriceNotesState.waiting_notes)
+async def handle_mac_new_notes(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await state.clear()
+    for cat_key in _mac_preview_cache:
+        _mac_custom_notes[cat_key] = message.text or ""
+    await _send_mac_preview(message)
+
+
+@router.message(F.text == "🖥 Маки")
+async def cmd_macs_menu(message: Message):
+    await message.answer("🖥 Маки — выберите категорию:", reply_markup=kb.macs_type_kb())
+
+
+@router.callback_query(F.data.startswith("mac_cat:"))
+async def cb_mac_category(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cat_key = call.data.split(":")[1]
+    if cat_key == "back":
+        await call.message.edit_text("🖥 Маки — выберите категорию:", reply_markup=kb.macs_type_kb())
+        return
+
+    cat_name = MAC_CATEGORIES.get(cat_key, cat_key)
+    cache = _load_mac_cache()
+    entry = cache.get(cat_key)
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not entry:
+        if is_admin:
+            await call.answer(
+                f"⚠️ Цены {cat_name} не загружены. Перешлите сообщение из канала поставщика.",
+                show_alert=True
+            )
+        else:
+            await call.answer(
+                "Цены временно недоступны. Напишите администратору @idistoreman",
+                show_alert=True
+            )
+        return
+
+    updated = entry.get("updated_at", "—")
+    disclaimer = (
+        f"⚠️ Цены актуальны на момент последнего обновления. "
+        f"Для уточнения пишите @idistoreman\n\n"
+        f"💻 <b>{cat_name}</b>  🕐 {updated}\n\n"
+    )
+    msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
+    if not msgs:
+        await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    price_blocks = []
+    seen_footnote_lines = []
+    for msg_text in msgs:
+        price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+        if price_text.strip():
+            price_blocks.append(price_text.strip())
+        for line in footnote_text.split("\n"):
+            if line not in seen_footnote_lines:
+                seen_footnote_lines.append(line)
+
+    footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+    for i, block in enumerate(price_blocks):
+        body = (disclaimer if i == 0 else "") + block
+        is_last_block = (i == len(price_blocks) - 1)
+        if i == 0:
+            await call.message.edit_text(body, parse_mode="HTML")
+        elif is_last_block and not footnote_combined:
+            await call.message.answer(body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
+        else:
+            await call.message.answer(body, parse_mode="HTML")
+
+    if footnote_combined:
+        await call.message.answer(footnote_combined, parse_mode="HTML", reply_markup=kb.mac_back_kb())
+    elif not price_blocks:
+        await call.message.answer("◀️", reply_markup=kb.mac_back_kb())
+
+
 @router.message()
 async def handle_forwarded(message: Message):
     from bot import ADMIN_IDS
@@ -1905,27 +2190,12 @@ async def handle_forwarded(message: Message):
         await message.answer("❌ Сообщение не содержит текста.")
         return
 
-    # Пробуем определить — наушники или iPhone
-    # iPhone имеет приоритет: если найдена серия — это iPhone-сообщение
+    # Приоритет: iPhone > Mac > AirPods
     series_list = _detect_series(text)
-    hp_cats = [] if series_list else _detect_hp_categories(text)
+    mac_cats = [] if series_list else _detect_mac_categories(text)
+    hp_cats = [] if (series_list or mac_cats) else _detect_hp_categories(text)
 
-    if hp_cats:
-        # Разбиваем сообщение по категориям сразу
-        split = _split_hp_by_category(text)
-        for cat, cat_text in split.items():
-            if cat_text.strip():
-                if cat not in _hp_draft:
-                    _hp_draft[cat] = []
-                _hp_draft[cat].append(cat_text)
-        names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
-        total_parts = max((len(_hp_draft[c]) for c in split if _hp_draft.get(c)), default=1)
-        await message.answer(
-            f"✅ Часть {total_parts} принята — {names}\n"
-            f"Пересылай ещё или напиши <b>готово наушники</b> чтобы сохранить.",
-            parse_mode="HTML"
-        )
-    elif series_list:
+    if series_list:
         # iPhone
         if len(series_list) == 1:
             s = series_list[0]
@@ -1950,5 +2220,35 @@ async def handle_forwarded(message: Message):
                 f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
                 parse_mode="HTML"
             )
+    elif mac_cats:
+        # Маки — разбиваем по категориям сразу
+        split = _split_mac_by_category(text)
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                if cat not in _mac_draft:
+                    _mac_draft[cat] = []
+                _mac_draft[cat].append(cat_text)
+        names = ", ".join(MAC_CATEGORIES[c] for c in split if split[c].strip())
+        total_parts = max((len(_mac_draft[c]) for c in split if _mac_draft.get(c)), default=1)
+        await message.answer(
+            f"✅ Часть {total_parts} принята — {names}\n"
+            f"Пересылай ещё или напиши <b>готово маки</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
+    elif hp_cats:
+        # Наушники — разбиваем по категориям сразу
+        split = _split_hp_by_category(text)
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                if cat not in _hp_draft:
+                    _hp_draft[cat] = []
+                _hp_draft[cat].append(cat_text)
+        names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
+        total_parts = max((len(_hp_draft[c]) for c in split if _hp_draft.get(c)), default=1)
+        await message.answer(
+            f"✅ Часть {total_parts} принята — {names}\n"
+            f"Пересылай ещё или напиши <b>готово наушники</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
     else:
-        await message.answer("⚠️ Серия iPhone или категория наушников не определена в этом сообщении.")
+        await message.answer("⚠️ Тип товара не определён. Поддерживаются: iPhone, MacBook Pro/Air, iMac, AirPods.")
