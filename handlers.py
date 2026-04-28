@@ -57,10 +57,16 @@ def _detect_series(text: str) -> str | None:
     return None
 
 
+_EXCLUDE_LINE_PATTERNS = re.compile(
+    r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS",
+    re.IGNORECASE
+)
+
+
 def _is_iphone_price_line(line: str) -> bool:
     """Строка с ценой на iPhone: начинается с номера серии 12-17."""
-    # Допустимые форматы начала строки:
-    # "17 Pro", "17 Pro Max", "17 Air", "17е", "17e", "17 256", "16 128" и т.д.
+    if _EXCLUDE_LINE_PATTERNS.search(line):
+        return False
     has_model_start = bool(re.match(
         r"^\s*1[2-7]\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{2,4}\b)",
         line, re.IGNORECASE
