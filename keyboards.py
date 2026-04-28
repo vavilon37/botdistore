@@ -229,6 +229,26 @@ def subscriptions_kb(subs: list[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def new_smartphones_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🍎 iPhone", callback_data="new_type:iphone")],
+        [InlineKeyboardButton(text="📱 Другие", callback_data="new_type:other")],
+    ])
+
+
+def iphone_series_kb() -> InlineKeyboardMarkup:
+    series = ["17", "16", "15", "14", "13", "12"]
+    buttons = [[InlineKeyboardButton(text=s, callback_data=f"new_series:{s}")] for s in series]
+    buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="new_type:back")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def new_series_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к сериям", callback_data="new_type:iphone")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

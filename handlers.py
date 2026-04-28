@@ -1,3 +1,8 @@
+import json
+import os
+import re
+from datetime import datetime
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InputMediaPhoto
 from aiogram.fsm.context import FSMContext
@@ -6,6 +11,49 @@ from aiogram.exceptions import TelegramBadRequest
 
 import database as db
 import keyboards as kb
+
+PRICE_CACHE_FILE = os.path.join(os.path.dirname(__file__), "price_cache.json")
+PRICE_MARKUP = 2000
+
+
+def _load_cache() -> dict:
+    if os.path.exists(PRICE_CACHE_FILE):
+        with open(PRICE_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_cache(cache: dict):
+    with open(PRICE_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+def _detect_series(text: str) -> str | None:
+    """Определяет серию iPhone (12-17) по тексту сообщения."""
+    for series in ["17", "16", "15", "14", "13", "12"]:
+        if re.search(rf"\b{series}\s*(Pro|Plus|Max|Air|mini|\d)", text):
+            return series
+    return None
+
+
+def _add_markup_to_prices(text: str) -> str:
+    """Добавляет PRICE_MARKUP к каждой цене в строках с iPhone."""
+    lines = text.split("\n")
+    result = []
+    # Паттерн: строка содержит модель iPhone и цену вида 100.300 или 100300
+    price_pattern = re.compile(r"(\d{2,3})[\.\s]?(\d{3})")
+
+    for line in lines:
+        # Обрабатываем только строки где есть модель + цена (содержат цифры серии и дефис перед ценой)
+        if re.search(r"\d{2,3}[\.\s]?\d{3}", line) and re.search(r"(Pro|Plus|Max|Air|mini|\d{2,3}\s*(GB|TB))", line, re.IGNORECASE):
+            def replace_price(m):
+                price = int(m.group(1)) * 1000 + int(m.group(2))
+                new_price = price + PRICE_MARKUP
+                # Форматируем обратно как было: 102.300
+                return f"{new_price // 1000}.{new_price % 1000:03d}"
+            line = price_pattern.sub(replace_price, line)
+        result.append(line)
+    return "\n".join(result)
 
 router = Router()
 
@@ -63,32 +111,71 @@ MENU_CATEGORY_MAP = {
 @router.message(F.text == "📱 Смартфоны New")
 async def cmd_smartphones_new(message: Message):
     await message.answer(
-        "📱 Новые iPhone — актуальные цены у @idistoreman\n\n"
-        "iPhone 12 mini — ⚫ ⚪ 🔴 🟢 🔵 🟣\n"
-        "iPhone 12 — ⚫ ⚪ 🔴 🟢 🔵 🟣\n"
-        "iPhone 12 Pro — ⚪ 🟤 🟡 🔵\n"
-        "iPhone 12 Pro Max — ⚪ 🟤 🟡 🔵\n\n"
-        "iPhone 13 mini — 🔴 🤍 🖤 🔵 🩷 🟢\n"
-        "iPhone 13 — 🤍 🖤 🔵 🩷 🟢 🔴\n"
-        "iPhone 13 Pro — ⚪ 🟤 🟡 🔵 🟢\n"
-        "iPhone 13 Pro Max — ⚪ 🟤 🟡 🔵 🟢\n\n"
-        "iPhone 14 — 🖤 🟣 🤍 🔴 🔵 🟡\n"
-        "iPhone 14 Plus — 🖤 🟣 🤍 🔴 🔵 🟡\n"
-        "iPhone 14 Pro — 🟤 ⚪ 🟡 🟣\n"
-        "iPhone 14 Pro Max — 🟤 ⚪ 🟡 🟣\n\n"
-        "iPhone 15 — ⚫ 🩷 🟡 🟢 🔵\n"
-        "iPhone 15 Plus — ⚫ 🩷 🟡 🟢 🔵\n"
-        "iPhone 15 Pro — ⚫ ⚪ 🔵 🤍\n"
-        "iPhone 15 Pro Max — ⚫ ⚪ 🔵 🤍\n\n"
-        "iPhone 16 — ⚫ ⚪ 🩷 🩵 🔵\n"
-        "iPhone 16 Plus — ⚫ ⚪ 🩷 🩵 🔵\n"
-        "iPhone 16 Pro — ⚫ ⚪ 🤍 🟡\n"
-        "iPhone 16 Pro Max — ⚫ ⚪ 🤍 🟡\n\n"
-        "iPhone 17 — ⚫ ⚪ 🔵 🟢 🩵\n"
-        "iPhone Air — ⚫ ⚪ 🟡 🩵\n"
-        "iPhone 17 Pro — ⚪ 🟠 🔵\n"
-        "iPhone 17 Pro Max — ⚪ 🟠 🔵",
-        reply_markup=kb.main_menu()
+        "📱 Смартфоны New — выберите категорию:",
+        reply_markup=kb.new_smartphones_type_kb()
+    )
+
+
+@router.callback_query(F.data == "new_type:iphone")
+async def cb_new_type_iphone(call: CallbackQuery):
+    await call.message.edit_text(
+        "🍎 iPhone — выберите серию:",
+        reply_markup=kb.iphone_series_kb()
+    )
+
+
+@router.callback_query(F.data == "new_type:other")
+async def cb_new_type_other(call: CallbackQuery):
+    await call.answer("Раздел пока в разработке", show_alert=True)
+
+
+@router.callback_query(F.data == "new_type:back")
+async def cb_new_type_back(call: CallbackQuery):
+    await call.message.edit_text(
+        "📱 Смартфоны New — выберите категорию:",
+        reply_markup=kb.new_smartphones_type_kb()
+    )
+
+
+@router.callback_query(F.data.startswith("new_series:"))
+async def cb_new_series(call: CallbackQuery):
+    series = call.data.split(":")[1]
+    cache = _load_cache()
+    entry = cache.get(series)
+    if not entry:
+        await call.answer(
+            f"Цены на iPhone {series} пока не загружены.\nПерешлите боту сообщение из канала поставщика.",
+            show_alert=True
+        )
+        return
+    updated = entry.get("updated_at", "—")
+    text = f"📱 <b>iPhone {series}</b>\n🕐 Обновлено: {updated}\n\n{entry['text']}"
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
+
+
+@router.message(F.forward_from_chat | F.forward_origin)
+async def handle_forwarded(message: Message):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    text = message.text or message.caption or ""
+    if not text:
+        await message.answer("❌ Сообщение не содержит текста.")
+        return
+    series = _detect_series(text)
+    if not series:
+        return
+    marked_text = _add_markup_to_prices(text)
+    cache = _load_cache()
+    cache[series] = {
+        "text": marked_text,
+        "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+    }
+    _save_cache(cache)
+    line_count = len([l for l in marked_text.split("\n") if l.strip()])
+    await message.answer(
+        f"✅ Цены iPhone {series} обновлены ({cache[series]['updated_at']})\n"
+        f"Строк в сообщении: {line_count}"
     )
 
 
