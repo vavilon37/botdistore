@@ -98,7 +98,9 @@ def _split_by_series(text: str, series_list: list[str]) -> dict[str, str]:
 
 
 _EXCLUDE_LINE_PATTERNS = re.compile(
-    r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS",
+    r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
+    r"|уцен|замена|дисплей|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
+    r"|состояние|б/у|БУ\b|used|refurb|витрин",
     re.IGNORECASE
 )
 
