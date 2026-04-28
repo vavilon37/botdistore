@@ -121,7 +121,7 @@ def _split_prices_and_footnotes(text: str) -> tuple[str, str]:
 
 def _add_markup_to_prices(text: str) -> str:
     """Добавляет PRICE_MARKUP к ценам в строках с iPhone."""
-    price_pattern = re.compile(r"(\d{2,3})[.\s](\d{3})")
+    price_pattern = re.compile(r"(\d{2,3})[.](\d{3})")
     lines = text.split("\n")
     result = []
     for line in lines:
