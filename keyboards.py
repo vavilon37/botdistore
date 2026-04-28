@@ -299,6 +299,36 @@ def mac_preview_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def tablets_brand_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🍎 Apple", callback_data="tab_brand:apple")],
+        [InlineKeyboardButton(text="📱 Другие", callback_data="tab_brand:other")],
+    ])
+
+
+def tablets_apple_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 iPad", callback_data="tab_cat:ipad")],
+        [InlineKeyboardButton(text="🚀 iPad Pro", callback_data="tab_cat:ipad_pro")],
+        [InlineKeyboardButton(text="💨 iPad Air", callback_data="tab_cat:ipad_air")],
+        [InlineKeyboardButton(text="🔹 iPad Mini", callback_data="tab_cat:ipad_mini")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="tab_brand:back")],
+    ])
+
+
+def tablet_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к планшетам", callback_data="tab_cat:back")],
+    ])
+
+
+def tablet_preview_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Сохранить", callback_data="tab_preview:save")],
+        [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="tab_preview:edit_notes")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

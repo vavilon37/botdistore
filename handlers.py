@@ -40,6 +40,11 @@ _mac_draft: dict = {}
 _mac_preview_cache: dict = {}
 _mac_custom_notes: dict = {}
 
+# Буферы для планшетов
+_tab_draft: dict = {}
+_tab_preview_cache: dict = {}
+_tab_custom_notes: dict = {}
+
 
 # Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
 _KEEP_FOOTNOTE_PATTERNS = [
@@ -437,6 +442,138 @@ def _save_mac_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+# ─── Планшеты ────────────────────────────────────────────────────────────────
+
+TABLETS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "tablets_cache.json")
+
+TABLET_CATEGORIES = {
+    "ipad": "iPad",
+    "ipad_pro": "iPad Pro",
+    "ipad_air": "iPad Air",
+    "ipad_mini": "iPad Mini",
+}
+
+_TABLET_EXCLUDE = re.compile(
+    r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин"
+    r"|вмятина|царап|скол|трещ",
+    re.IGNORECASE
+)
+
+_TABLET_NOISE_RE = re.compile(
+    r"гарантия|гравировка|pencil|magic\s+keyboard|magic\s+mouse|magic\s+track"
+    r"|apple\s+tv|кабель|зарядка|airtag|deppa|продолжение|magsafe"
+    r"|\+\d\s*месяц",
+    re.IGNORECASE
+)
+
+_TABLET_PRICE_RE = re.compile(
+    r"(?:[-—]\s*|(?<=\s))(\d{2,3})[.](\d{3})\b"
+    r"|(?:[-—]\s*)(\d{2,3})(\d{3})\b"
+)
+
+
+def _extract_tablet_price(line: str) -> int | None:
+    for m in _TABLET_PRICE_RE.finditer(line):
+        if m.group(1) is not None:
+            return int(m.group(1)) * 1000 + int(m.group(2))
+        if m.group(3) is not None:
+            return int(m.group(3)) * 1000 + int(m.group(4))
+    return None
+
+
+def _tablet_markup(price: int) -> int:
+    if price >= 200000:
+        return 7000
+    if price >= 100000:
+        return 4000
+    return 2000
+
+
+def _is_tablet_price_line(line: str) -> bool:
+    if _TABLET_EXCLUDE.search(line):
+        return False
+    if _TABLET_NOISE_RE.search(line):
+        return False
+    price = _extract_tablet_price(line)
+    if price is None or price < 25000:
+        return False
+    return bool(re.search(r"iPad|iPro\b", line, re.IGNORECASE))
+
+
+def _classify_tablet_line(line: str) -> str | None:
+    if not _is_tablet_price_line(line):
+        return None
+    # Порядок важен: Pro и Air и Mini раньше базового iPad
+    if re.search(r"iPad\s*Pro|iPro\b", line, re.IGNORECASE):
+        return "ipad_pro"
+    if re.search(r"iPad\s*Air", line, re.IGNORECASE):
+        return "ipad_air"
+    if re.search(r"iPad\s*Mini|iPad\s*mini", line, re.IGNORECASE):
+        return "ipad_mini"
+    return "ipad"
+
+
+def _detect_tablet_categories(text: str) -> list[str]:
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_tablet_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
+
+
+def _split_tablet_by_category(text: str) -> dict[str, str]:
+    lines_by_cat: dict[str, list] = {k: [] for k in TABLET_CATEGORIES}
+    for line in text.split("\n"):
+        cat = _classify_tablet_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            result[cat] = "\n".join(lines).strip()
+    return result
+
+
+def _add_markup_to_tablet_prices(text: str) -> str:
+    def replace_price(m):
+        if m.group(1) is not None:
+            price = int(m.group(1)) * 1000 + int(m.group(2))
+            new_price = price + _tablet_markup(price)
+            return m.group(0).replace(
+                m.group(1) + "." + m.group(2),
+                f"{new_price // 1000}.{new_price % 1000:03d}"
+            )
+        if m.group(3) is not None:
+            price = int(m.group(3)) * 1000 + int(m.group(4))
+            new_price = price + _tablet_markup(price)
+            return m.group(0).replace(
+                m.group(3) + m.group(4),
+                f"{new_price // 1000}{new_price % 1000:03d}"
+            )
+        return m.group(0)
+
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if _is_tablet_price_line(line):
+            line = _TABLET_PRICE_RE.sub(replace_price, line)
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_tablets_cache() -> dict:
+    if os.path.exists(TABLETS_CACHE_FILE):
+        with open(TABLETS_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_tablets_cache(cache: dict):
+    with open(TABLETS_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -528,6 +665,10 @@ class HpPriceNotesState(StatesGroup):
 
 
 class MacPriceNotesState(StatesGroup):
+    waiting_notes = State()
+
+
+class TabPriceNotesState(StatesGroup):
     waiting_notes = State()
 
 
@@ -2144,6 +2285,182 @@ async def handle_mac_new_notes(message: Message, state: FSMContext):
     await _send_mac_preview(message)
 
 
+@router.message(F.text == "📟 Планшеты")
+async def cmd_tablets_menu(message: Message):
+    await message.answer("📟 Планшеты — выберите бренд:", reply_markup=kb.tablets_brand_kb())
+
+
+@router.callback_query(F.data.startswith("tab_brand:"))
+async def cb_tablet_brand(call: CallbackQuery):
+    brand = call.data.split(":")[1]
+    if brand == "back":
+        await call.message.edit_text("📟 Планшеты — выберите бренд:", reply_markup=kb.tablets_brand_kb())
+        return
+    if brand == "apple":
+        await call.message.edit_text("🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
+    else:
+        await call.answer("Раздел в разработке", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("tab_cat:"))
+async def cb_tablet_category(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cat_key = call.data.split(":")[1]
+    if cat_key == "back":
+        await call.message.edit_text("🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
+        return
+
+    cat_name = TABLET_CATEGORIES.get(cat_key, cat_key)
+    cache = _load_tablets_cache()
+    entry = cache.get(cat_key)
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not entry:
+        if is_admin:
+            await call.answer(
+                f"⚠️ Цены {cat_name} не загружены. Перешлите сообщение из канала поставщика.",
+                show_alert=True
+            )
+        else:
+            await call.answer(
+                "Цены временно недоступны. Напишите администратору @idistoreman",
+                show_alert=True
+            )
+        return
+
+    updated = entry.get("updated_at", "—")
+    disclaimer = (
+        f"⚠️ Цены актуальны на момент последнего обновления. "
+        f"Для уточнения пишите @idistoreman\n\n"
+        f"📟 <b>{cat_name}</b>  🕐 {updated}\n\n"
+    )
+    msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
+    if not msgs:
+        await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    price_blocks = []
+    seen_footnote_lines = []
+    for msg_text in msgs:
+        price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+        if price_text.strip():
+            price_blocks.append(price_text.strip())
+        for line in footnote_text.split("\n"):
+            if line not in seen_footnote_lines:
+                seen_footnote_lines.append(line)
+
+    footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+    for i, block in enumerate(price_blocks):
+        body = (disclaimer if i == 0 else "") + block
+        is_last_block = (i == len(price_blocks) - 1)
+        if i == 0:
+            await call.message.edit_text(body, parse_mode="HTML")
+        elif is_last_block and not footnote_combined:
+            await call.message.answer(body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
+        else:
+            await call.message.answer(body, parse_mode="HTML")
+
+    if footnote_combined:
+        await call.message.answer(footnote_combined, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
+    elif not price_blocks:
+        await call.message.answer("◀️", reply_markup=kb.tablet_back_kb())
+
+
+async def _send_tab_preview(message: Message):
+    await message.answer("👁 <b>Превью планшетов — так увидит пользователь:</b>", parse_mode="HTML")
+    for cat_key, entry in _tab_preview_cache.items():
+        cat_name = TABLET_CATEGORIES[cat_key]
+        msgs = entry["msgs"]
+        updated = entry["updated_at"]
+        disclaimer = (
+            f"⚠️ Цены актуальны на момент последнего обновления. "
+            f"Для уточнения пишите @idistoreman\n\n"
+            f"📟 <b>{cat_name}</b>  🕐 {updated}\n\n"
+        )
+        price_blocks = []
+        seen_footnote_lines = []
+        for msg_text in msgs:
+            price_text, footnote_text = _split_prices_and_footnotes(msg_text)
+            if price_text.strip():
+                price_blocks.append(price_text.strip())
+            for line in footnote_text.split("\n"):
+                if line not in seen_footnote_lines:
+                    seen_footnote_lines.append(line)
+
+        if cat_key in _tab_custom_notes:
+            footnote_combined = _tab_custom_notes[cat_key].strip()
+        else:
+            footnote_combined = "\n".join(seen_footnote_lines).strip()
+
+        for i, block in enumerate(price_blocks):
+            body = (disclaimer if i == 0 else "") + block
+            await message.answer(body, parse_mode="HTML")
+        if footnote_combined:
+            await message.answer(footnote_combined, parse_mode="HTML")
+
+    await message.answer(
+        "Как выглядит? Сохранить или изменить пометки?",
+        reply_markup=kb.tablet_preview_kb()
+    )
+
+
+@router.message(F.text.lower() == "готово планшеты")
+async def handle_tab_done(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not _tab_draft:
+        await message.answer("Нет накопленных сообщений для планшетов.")
+        return
+    _tab_preview_cache.clear()
+    _tab_custom_notes.clear()
+    for cat_key, parts in _tab_draft.items():
+        msgs = [_add_markup_to_tablet_prices(p) for p in parts]
+        msgs = [m for m in msgs if m.strip()]
+        _tab_preview_cache[cat_key] = {"msgs": msgs, "updated_at": _now_msk()}
+    _tab_draft.clear()
+    await _send_tab_preview(message)
+
+
+@router.callback_query(F.data.startswith("tab_preview:"))
+async def cb_tab_preview(call: CallbackQuery, state: FSMContext):
+    from bot import ADMIN_IDS
+    if call.from_user.id not in ADMIN_IDS:
+        return
+    action = call.data.split(":")[1]
+    if action == "save":
+        cache = _load_tablets_cache()
+        for cat_key, entry in _tab_preview_cache.items():
+            if cat_key in _tab_custom_notes:
+                for i, msg_text in enumerate(entry["msgs"]):
+                    entry["msgs"][i] = msg_text + "\n\n" + _tab_custom_notes[cat_key]
+            cache[cat_key] = entry
+        _save_tablets_cache(cache)
+        _tab_preview_cache.clear()
+        _tab_custom_notes.clear()
+        await call.message.answer("✅ Цены на планшеты сохранены!")
+    elif action == "edit_notes":
+        cats_str = ", ".join(TABLET_CATEGORIES[c] for c in _tab_preview_cache)
+        await call.message.answer(
+            f"✏️ Пришли новый текст пометок для <b>{cats_str}</b>.\n"
+            f"Он заменит стандартные пояснения во всех категориях превью.",
+            parse_mode="HTML"
+        )
+        await state.set_state(TabPriceNotesState.waiting_notes)
+
+
+@router.message(TabPriceNotesState.waiting_notes)
+async def handle_tab_new_notes(message: Message, state: FSMContext):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    await state.clear()
+    for cat_key in _tab_preview_cache:
+        _tab_custom_notes[cat_key] = message.text or ""
+    await _send_tab_preview(message)
+
+
 @router.message(F.text == "🖥 Маки")
 async def cmd_macs_menu(message: Message):
     await message.answer("🖥 Маки — выберите категорию:", reply_markup=kb.macs_type_kb())
@@ -2226,10 +2543,11 @@ async def handle_forwarded(message: Message):
         await message.answer("❌ Сообщение не содержит текста.")
         return
 
-    # Приоритет: iPhone > Mac > AirPods
+    # Приоритет: iPhone > Mac > AirPods > Планшеты
     series_list = _detect_series(text)
     mac_cats = [] if series_list else _detect_mac_categories(text)
     hp_cats = [] if (series_list or mac_cats) else _detect_hp_categories(text)
+    tab_cats = [] if (series_list or mac_cats or hp_cats) else _detect_tablet_categories(text)
 
     if series_list:
         # iPhone
@@ -2284,6 +2602,21 @@ async def handle_forwarded(message: Message):
         await message.answer(
             f"✅ Часть {total_parts} принята — {names}\n"
             f"Пересылай ещё или напиши <b>готово наушники</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
+    elif tab_cats:
+        # Планшеты — разбиваем по категориям сразу
+        split = _split_tablet_by_category(text)
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                if cat not in _tab_draft:
+                    _tab_draft[cat] = []
+                _tab_draft[cat].append(cat_text)
+        names = ", ".join(TABLET_CATEGORIES[c] for c in split if split[c].strip())
+        total_parts = max((len(_tab_draft[c]) for c in split if _tab_draft.get(c)), default=1)
+        await message.answer(
+            f"✅ Часть {total_parts} принята — {names}\n"
+            f"Пересылай ещё или напиши <b>готово планшеты</b> чтобы сохранить.",
             parse_mode="HTML"
         )
     else:
