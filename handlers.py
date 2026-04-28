@@ -210,27 +210,18 @@ def _detect_hp_categories(text: str) -> list[str]:
 
 
 def _split_hp_by_category(text: str) -> dict[str, str]:
-    """Разбивает текст на части по категориям наушников. Пояснения копируются в каждую."""
+    """Разбивает текст на части по категориям наушников."""
     lines_by_cat: dict[str, list] = {"airpods": [], "airpods_pro": [], "airpods_max": []}
-    footnote_lines: list = []
-    in_footnote = False
 
     for line in text.split("\n"):
-        if not in_footnote and _is_footnote_line(line):
-            in_footnote = True
-        if in_footnote:
-            footnote_lines.append(line)
-            continue
         cat = _classify_hp_line(line)
         if cat:
             lines_by_cat[cat].append(line)
 
-    footnote_text = "\n".join(footnote_lines).strip()
     result = {}
     for cat, lines in lines_by_cat.items():
         if lines:
-            prices = "\n".join(lines).strip()
-            result[cat] = prices + ("\n\n" + footnote_text if footnote_text else "")
+            result[cat] = "\n".join(lines).strip()
     return result
 
 
@@ -390,16 +381,9 @@ def _detect_mac_categories(text: str) -> list[str]:
 
 def _split_mac_by_category(text: str) -> dict[str, str]:
     lines_by_cat: dict[str, list] = {k: [] for k in MAC_CATEGORIES}
-    footnote_lines: list = []
-    in_footnote = False
     section = None
 
     for line in text.split("\n"):
-        if not in_footnote and _is_footnote_line(line):
-            in_footnote = True
-        if in_footnote:
-            footnote_lines.append(line)
-            continue
         s = _detect_section(line)
         if s:
             section = s
@@ -407,12 +391,10 @@ def _split_mac_by_category(text: str) -> dict[str, str]:
         if cat:
             lines_by_cat[cat].append(line)
 
-    footnote_text = "\n".join(footnote_lines).strip()
     result = {}
     for cat, lines in lines_by_cat.items():
         if lines:
-            prices = "\n".join(lines).strip()
-            result[cat] = prices + ("\n\n" + footnote_text if footnote_text else "")
+            result[cat] = "\n".join(lines).strip()
     return result
 
 
