@@ -276,75 +276,117 @@ MAC_CATEGORIES = {
     "imac": "iMac",
 }
 
-# Наценка зависит от цены: >=100000 → +4000, иначе +2000
-MAC_MARKUP_HIGH = 4000
-MAC_MARKUP_LOW = 2000
-MAC_MARKUP_THRESHOLD = 100000
-
 _MAC_EXCLUDE = re.compile(
     r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин",
     re.IGNORECASE
 )
 
-# Паттерн цены для маков: -173.000 или — 143000 или -125.500
-_MAC_PRICE_RE = re.compile(r"[-—]\s*(\d{2,3})[.\s]?(\d{3})\b")
+# Цена в строках маков: число вида 77.000 / 136.000 / 143000 / 77000
+# Может идти после дефиса/тире/пробела или прямо в конце строки
+_MAC_PRICE_RE = re.compile(
+    r"(?:[-—]\s*|(?<=\s))(\d{2,3})[.](\d{3})\b"   # с точкой: 136.000
+    r"|(?:[-—]\s*)(\d{2,3})(\d{3})\b"              # без точки после дефиса: -143000
+)
 
 
-def _parse_mac_price(line: str) -> int | None:
-    """Извлекает цену из строки мака. Возвращает цену в рублях или None."""
-    m = _MAC_PRICE_RE.search(line)
-    if not m:
-        return None
-    major = int(m.group(1))
-    minor_str = m.group(2)
-    minor = int(minor_str)
-    # Если major >= 100 и minor — это просто тысячи без дробной части (напр. 143000 → 143 + 000)
-    return major * 1000 + minor
+def _extract_mac_price(line: str) -> int | None:
+    """Возвращает цену в рублях или None."""
+    for m in _MAC_PRICE_RE.finditer(line):
+        if m.group(1) is not None:
+            return int(m.group(1)) * 1000 + int(m.group(2))
+        if m.group(3) is not None:
+            return int(m.group(3)) * 1000 + int(m.group(4))
+    return None
+
+
+def _mac_markup(price: int) -> int:
+    if price >= 200000:
+        return 7000
+    if price >= 100000:
+        return 4000
+    return 2000
+
+
+# Строка мака должна содержать артикул Apple (буквы+цифры) или явное название модели
+_MAC_ARTICLE_RE = re.compile(
+    r"MacBook\s+(Pro|Air)|(?<!\w)Air\s+1[35]\b|(?<!\w)NEO\b|iMac\b|Mac\s+Mini\b|Mac\s+Studio\b"
+    # Артикулы Apple: MW2V3, MGDN4, MDE04, MWUC3, MCX04, MX2F3, Z1AW0000S, MU9E3
+    # Формат: 1-2 буквы, затем чередование цифр/букв, минимум 4 символа итого
+    r"|(?<![A-Za-z])(?:[A-Z]\d|\d[A-Z]|[A-Z]{2,})\w{2,5}\b",
+    re.IGNORECASE
+)
+
+# Слова которые говорят что строка НЕ цена на мак (гарантия, мышь, клавиатура и т.д.)
+_MAC_NOISE_RE = re.compile(
+    r"гарантия|гравировка|office|microsoft|magic\s+mouse|magic\s+track|magic\s+keyboard"
+    r"|pencil|airtag|apple\s+tv|deppa|кабель|зарядка|magsafe\s+charger|power\s+adapter"
+    r"|leather\s+sleeve|\+\d\s*месяц|custom\s+macbook|продолжение"
+    r"|mac\s+mini|mac\s+studio|mac\s+pro\b",  # Mac Mini/Studio — отдельные устройства, не в каталоге
+    re.IGNORECASE
+)
 
 
 def _is_mac_price_line(line: str) -> bool:
     if _MAC_EXCLUDE.search(line):
         return False
-    has_price = bool(_MAC_PRICE_RE.search(line))
-    if not has_price:
+    if _MAC_NOISE_RE.search(line):
         return False
-    # Должна содержать MacBook Pro, MacBook Air, Air, iMac, NEO или артикул модели
-    has_model = bool(re.search(
-        r"MacBook\s+(Pro|Air)|(?<!\w)Air\s+1[35]\b|(?<!\w)NEO\b|iMac\s+M\d|"
-        r"\b[A-Z]{2,4}\d{2,4}[A-Z]?\d?\b",  # артикулы типа MGDN4, MDE04, MWUC3
-        line, re.IGNORECASE
-    ))
-    return has_model
+    price = _extract_mac_price(line)
+    if price is None:
+        return False
+    # Цена должна быть реалистичной для мака (от 50000)
+    if price < 50000:
+        return False
+    return bool(_MAC_ARTICLE_RE.search(line))
 
 
-def _classify_mac_line(line: str) -> str | None:
-    """Возвращает ключ категории мака для строки или None."""
+_MAC_SECTION_RE = {
+    "macbook_pro": re.compile(r"MacBook\s+Pro|macbook\s+pro", re.IGNORECASE),
+    "macbook_air": re.compile(r"MacBook\s+Air|macbook\s+air", re.IGNORECASE),
+    "imac": re.compile(r"\biMac\b", re.IGNORECASE),
+}
+
+
+def _classify_mac_line(line: str, section: str | None = None) -> str | None:
     if not _is_mac_price_line(line):
         return None
-    if re.search(r"MacBook\s+Pro|MBP", line, re.IGNORECASE):
+    # Pro раньше Air — "MacBook Pro" не должен попасть в Air
+    if re.search(r"MacBook\s+Pro|\bPro\s+1[46]\b|\bPro\s+14\b", line, re.IGNORECASE):
         return "macbook_pro"
     if re.search(r"MacBook\s+Air|(?<!\w)Air\s+1[35]\b|NEO\b", line, re.IGNORECASE):
         return "macbook_air"
-    if re.search(r"iMac", line, re.IGNORECASE):
+    if re.search(r"iMac\b", line, re.IGNORECASE):
         return "imac"
-    # Артикул без явного названия — смотрим по контексту (не определить точно)
+    # Строка только с артикулом — используем текущую секцию из заголовка
+    return section
+
+
+def _detect_section(line: str) -> str | None:
+    """Определяет категорию по заголовку секции."""
+    for cat, pat in _MAC_SECTION_RE.items():
+        if pat.search(line):
+            return cat
     return None
 
 
 def _detect_mac_categories(text: str) -> list[str]:
     found = set()
+    section = None
     for line in text.split("\n"):
-        cat = _classify_mac_line(line)
+        s = _detect_section(line)
+        if s:
+            section = s
+        cat = _classify_mac_line(line, section)
         if cat:
             found.add(cat)
     return list(found)
 
 
 def _split_mac_by_category(text: str) -> dict[str, str]:
-    """Разбивает текст на части по категориям маков."""
     lines_by_cat: dict[str, list] = {k: [] for k in MAC_CATEGORIES}
     footnote_lines: list = []
     in_footnote = False
+    section = None
 
     for line in text.split("\n"):
         if not in_footnote and _is_footnote_line(line):
@@ -352,7 +394,10 @@ def _split_mac_by_category(text: str) -> dict[str, str]:
         if in_footnote:
             footnote_lines.append(line)
             continue
-        cat = _classify_mac_line(line)
+        s = _detect_section(line)
+        if s:
+            section = s
+        cat = _classify_mac_line(line, section)
         if cat:
             lines_by_cat[cat].append(line)
 
@@ -367,18 +412,21 @@ def _split_mac_by_category(text: str) -> dict[str, str]:
 
 def _add_markup_to_mac_prices(text: str) -> str:
     def replace_price(m):
-        major = int(m.group(1))
-        minor = int(m.group(2))
-        price = major * 1000 + minor
-        markup = MAC_MARKUP_HIGH if price >= MAC_MARKUP_THRESHOLD else MAC_MARKUP_LOW
-        new_price = price + markup
-        sep = m.group(0)[m.group(0).index(m.group(1)) - 1] if m.group(1) in m.group(0) else "."
-        # Сохраняем формат: если было с точкой — оставляем с точкой
-        original = m.group(0)
-        if "." in original:
-            return original[:original.index(m.group(1))] + f"{new_price // 1000}.{new_price % 1000:03d}"
-        else:
-            return original[:original.index(m.group(1))] + f"{new_price // 1000}{new_price % 1000:03d}"
+        if m.group(1) is not None:
+            price = int(m.group(1)) * 1000 + int(m.group(2))
+            new_price = price + _mac_markup(price)
+            return m.group(0).replace(
+                m.group(1) + "." + m.group(2),
+                f"{new_price // 1000}.{new_price % 1000:03d}"
+            )
+        if m.group(3) is not None:
+            price = int(m.group(3)) * 1000 + int(m.group(4))
+            new_price = price + _mac_markup(price)
+            return m.group(0).replace(
+                m.group(3) + m.group(4),
+                f"{new_price // 1000}{new_price % 1000:03d}"
+            )
+        return m.group(0)
 
     lines = text.split("\n")
     result = []
