@@ -1,7 +1,13 @@
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+MSK = timezone(timedelta(hours=3))
+
+
+def _now_msk() -> str:
+    return datetime.now(MSK).strftime("%d.%m.%Y %H:%M")
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InputMediaPhoto
@@ -83,6 +89,40 @@ def _filter_iphone_lines(text: str) -> str:
     while result and not result[0].strip():
         result.pop(0)
     return "\n".join(result)
+
+
+def _split_prices_and_footnotes(text: str) -> tuple[str, str]:
+    """Разделяет текст на блок цен и блок пояснений."""
+    lines = text.split("\n")
+    price_lines = []
+    footnote_lines = []
+    in_footnote = False
+    for line in lines:
+        if not in_footnote and _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote:
+            footnote_lines.append(line)
+        else:
+            price_lines.append(line)
+    return "\n".join(price_lines).strip(), "\n".join(footnote_lines).strip()
+
+
+def _split_into_chunks(text: str, max_len: int = 4000) -> list[str]:
+    """Разбивает текст на части не более max_len символов, разрезая по строкам."""
+    chunks = []
+    current = []
+    current_len = 0
+    for line in text.split("\n"):
+        # +1 для \n
+        if current_len + len(line) + 1 > max_len and current:
+            chunks.append("\n".join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
 
 def _add_markup_to_prices(text: str) -> str:
@@ -197,20 +237,37 @@ async def cb_new_series(call: CallbackQuery):
             )
         else:
             await call.answer(
-                f"Цены временно недоступны. Напишите администратору @idistoreman",
+                "Цены временно недоступны. Напишите администратору @idistoreman",
                 show_alert=True
             )
         return
+
     updated = entry.get("updated_at", "—")
-    text = (
+    disclaimer = (
         f"⚠️ Цены актуальны на момент последнего обновления. "
         f"Для уточнения пишите @idistoreman\n\n"
         f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
-        f"{entry['text']}"
     )
-    if len(text) > 4096:
-        text = text[:4090] + "\n..."
-    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
+
+    price_text, footnote_text = _split_prices_and_footnotes(entry["text"])
+    chunks = _split_into_chunks(price_text)
+
+    # Первое сообщение — редактируем текущее, добавляем disclaimer
+    first = disclaimer + chunks[0]
+    kb_back = kb.new_series_back_kb() if len(chunks) == 1 else None
+    await call.message.edit_text(first, parse_mode="HTML", reply_markup=kb_back)
+
+    # Промежуточные части без кнопок
+    for chunk in chunks[1:]:
+        await call.message.answer(chunk, parse_mode="HTML")
+
+    # Пояснения отдельным сообщением если есть
+    if footnote_text:
+        await call.message.answer(footnote_text, parse_mode="HTML")
+
+    # Кнопка "назад" в последнем сообщении
+    if len(chunks) > 1:
+        await call.message.answer("—", reply_markup=kb.new_series_back_kb())
 
 
 @router.message(F.text.lower() == "готово")
@@ -229,7 +286,7 @@ async def handle_done(message: Message):
         marked = _add_markup_to_prices(filtered)
         cache[series] = {
             "text": marked,
-            "updated_at": datetime.now().strftime("%d.%m.%Y %H:%M")
+            "updated_at": _now_msk()
         }
         line_count = len([l for l in marked.split("\n") if l.strip()])
         saved.append(f"iPhone {series}: {line_count} строк")
