@@ -234,7 +234,13 @@ async def cb_new_series(call: CallbackQuery):
         f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
     )
     # Каждая часть — отдельное сохранённое сообщение
-    msgs = entry.get("msgs", [entry["text"]])
+    msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
+    if not msgs:
+        if is_admin:
+            await call.answer(f"⚠️ Цены iPhone {series} не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
     first = True
     for i, msg_text in enumerate(msgs):
         price_text, footnote_text = _split_prices_and_footnotes(msg_text)
