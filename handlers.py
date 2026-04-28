@@ -21,6 +21,9 @@ import keyboards as kb
 PRICE_CACHE_FILE = os.path.join(os.path.dirname(__file__), "price_cache.json")
 PRICE_MARKUP = 2000
 
+# Временный буфер до команды "готово": {series: [msg_text, ...]}
+_draft: dict = {}
+
 
 # Строки-пояснения которые нужно сохранять (в конце сообщения поставщика)
 _KEEP_FOOTNOTE_PATTERNS = [
@@ -1414,6 +1417,26 @@ async def cb_pmodel_select(call: CallbackQuery):
     await _pf_send_list(call.bot, call.message.chat.id, uid, filtered)
 
 
+@router.message(F.text.lower() == "готово")
+async def handle_done(message: Message):
+    from bot import ADMIN_IDS
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    if not _draft:
+        await message.answer("Нет накопленных сообщений.")
+        return
+    cache = _load_cache()
+    saved = []
+    for series, parts in _draft.items():
+        msgs = [_add_markup_to_prices(_filter_iphone_lines(p)) for p in parts]
+        cache[series] = {"msgs": msgs, "updated_at": _now_msk()}
+        total = sum(len([l for l in m.split("\n") if l.strip()]) for m in msgs)
+        saved.append(f"iPhone {series}: {len(msgs)} сообщ., {total} строк")
+    _save_cache(cache)
+    _draft.clear()
+    await message.answer("✅ Сохранено:\n" + "\n".join(saved))
+
+
 @router.message()
 async def handle_forwarded(message: Message):
     from bot import ADMIN_IDS
@@ -1430,19 +1453,13 @@ async def handle_forwarded(message: Message):
         await message.answer("⚠️ Серия iPhone не определена в этом сообщении.")
         return
 
-    filtered = _filter_iphone_lines(text)
-    marked = _add_markup_to_prices(filtered)
+    if series not in _draft:
+        _draft[series] = []
+    _draft[series].append(text)
 
-    cache = _load_cache()
-    entry = cache.get(series, {"msgs": [], "updated_at": _now_msk()})
-    entry["msgs"].append(marked)
-    entry["updated_at"] = _now_msk()
-    cache[series] = entry
-    _save_cache(cache)
-
-    msg_num = len(entry["msgs"])
-    line_count = len([l for l in marked.split("\n") if l.strip()])
+    part_num = len(_draft[series])
     await message.answer(
-        f"✅ Сообщение {msg_num} сохранено — iPhone {series} ({line_count} строк)\n"
-        f"Можешь пересылать ещё сообщения для этой серии."
+        f"✅ Часть {part_num} принята — iPhone {series}\n"
+        f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+        parse_mode="HTML"
     )
