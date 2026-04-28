@@ -282,6 +282,7 @@ def macs_type_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="💻 MacBook Pro", callback_data="mac_cat:macbook_pro")],
         [InlineKeyboardButton(text="💻 MacBook Air", callback_data="mac_cat:macbook_air")],
         [InlineKeyboardButton(text="🖥 iMac", callback_data="mac_cat:imac")],
+        [InlineKeyboardButton(text="🍏 Mac Mini", callback_data="mac_cat:mac_mini")],
     ])
 
 

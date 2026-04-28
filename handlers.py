@@ -274,6 +274,7 @@ MAC_CATEGORIES = {
     "macbook_pro": "MacBook Pro",
     "macbook_air": "MacBook Air",
     "imac": "iMac",
+    "mac_mini": "Mac Mini",
 }
 
 _MAC_EXCLUDE = re.compile(
@@ -321,7 +322,7 @@ _MAC_NOISE_RE = re.compile(
     r"гарантия|гравировка|office|microsoft|magic\s+mouse|magic\s+track|magic\s+keyboard"
     r"|pencil|airtag|apple\s+tv|deppa|кабель|зарядка|magsafe\s+charger|power\s+adapter"
     r"|leather\s+sleeve|\+\d\s*месяц|custom\s+macbook|продолжение"
-    r"|mac\s+mini|mac\s+studio|mac\s+pro\b",  # Mac Mini/Studio — отдельные устройства, не в каталоге
+    r"|mac\s+studio|mac\s+pro\b",  # Mac Studio — не в каталоге
     re.IGNORECASE
 )
 
@@ -341,9 +342,10 @@ def _is_mac_price_line(line: str) -> bool:
 
 
 _MAC_SECTION_RE = {
-    "macbook_pro": re.compile(r"MacBook\s+Pro|macbook\s+pro", re.IGNORECASE),
-    "macbook_air": re.compile(r"MacBook\s+Air|macbook\s+air", re.IGNORECASE),
+    "macbook_pro": re.compile(r"MacBook\s+Pro", re.IGNORECASE),
+    "macbook_air": re.compile(r"MacBook\s+Air", re.IGNORECASE),
     "imac": re.compile(r"\biMac\b", re.IGNORECASE),
+    "mac_mini": re.compile(r"Mac\s+Mini", re.IGNORECASE),
 }
 
 
@@ -357,12 +359,16 @@ def _classify_mac_line(line: str, section: str | None = None) -> str | None:
         return "macbook_air"
     if re.search(r"iMac\b", line, re.IGNORECASE):
         return "imac"
+    if re.search(r"Mac\s+Mini\b", line, re.IGNORECASE):
+        return "mac_mini"
     # Строка только с артикулом — используем текущую секцию из заголовка
     return section
 
 
 def _detect_section(line: str) -> str | None:
-    """Определяет категорию по заголовку секции."""
+    """Определяет категорию по заголовку секции (строка без цены)."""
+    if _extract_mac_price(line) is not None:
+        return None
     for cat, pat in _MAC_SECTION_RE.items():
         if pat.search(line):
             return cat
