@@ -546,6 +546,53 @@ async def cmd_update_prices(message: Message):
         await message.answer(f"❌ Ошибка при обновлении: {e}", reply_markup=kb.admin_menu())
 
 
+@router.message(F.text.startswith("/debug_post"))
+async def cmd_debug_post(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    parts = message.text.strip().split()
+    post_path = parts[1] if len(parts) > 1 else "BigSaleApple/12255"
+    from price_monitor import _fetch_post_text, HEADERS
+    from handlers import _detect_tablet_categories, _classify_tablet_line, _extract_tablet_price, _TABLET_NOISE_RE, _TABLET_EXCLUDE, _detect_tablet_section
+    import aiohttp, re
+
+    await message.answer(f"⏳ Получаю пост {post_path}...")
+    async with aiohttp.ClientSession() as session:
+        text = await _fetch_post_text(session, post_path)
+
+    if not text:
+        await message.answer("❌ Пост не получен (None)")
+        return
+
+    # Шлём сырой текст (первые 3000 символов)
+    await message.answer(f"📄 Сырой текст ({len(text)} симв.):\n<pre>{text[:3000].replace('<','&lt;')}</pre>", parse_mode="HTML")
+
+    # Показываем классификацию каждой строки
+    report_lines = []
+    section = None
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        s = _detect_tablet_section(line)
+        if s:
+            section = s
+        price = _extract_tablet_price(line)
+        noise = bool(_TABLET_NOISE_RE.search(line))
+        excluded = bool(_TABLET_EXCLUDE.search(line))
+        has_ipad = bool(re.search(r"iPad|iPro\b", line, re.IGNORECASE))
+        from handlers import _classify_tablet_line
+        cat = _classify_tablet_line(line, section)
+        if price or has_ipad or s:
+            short = line[:60].replace("<", "&lt;")
+            report_lines.append(
+                f"<code>{short}</code>\n"
+                f"  sect={section} cat={cat} price={price} noise={noise} excl={excluded}"
+            )
+
+    report = "\n".join(report_lines[:40])
+    await message.answer(f"🔍 Классификация строк:\n{report}", parse_mode="HTML")
+
+
 @router.message(F.text == "/export")
 async def cmd_export(message: Message):
     if not is_admin(message.from_user.id):
