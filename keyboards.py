@@ -357,6 +357,35 @@ def buyout_kit_kb(selected: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+BUYOUT_COLORS = [
+    "Black", "White", "Red", "Blue", "Green",
+    "Purple", "Yellow", "Pink", "Starlight", "Midnight",
+    "Natural Titanium", "Black Titanium", "White Titanium", "Desert Titanium",
+    "Teal", "Ultramarine", "другой",
+]
+
+BUYOUT_STORAGES = ["64 GB", "128 GB", "256 GB", "512 GB", "1 TB", "2 TB"]
+
+
+def buyout_color_kb() -> InlineKeyboardMarkup:
+    rows = []
+    for i in range(0, len(BUYOUT_COLORS), 2):
+        pair = BUYOUT_COLORS[i:i+2]
+        rows.append([InlineKeyboardButton(text=c, callback_data=f"buyout_color:{c}") for c in pair])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def buyout_storage_kb() -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text=s, callback_data=f"buyout_storage:{s}")] for s in BUYOUT_STORAGES]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def buyout_skip_comment_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ Пропустить", callback_data="buyout:skip_comment")],
+    ])
+
+
 def admin_categories_kb() -> InlineKeyboardMarkup:
     buttons = [[InlineKeyboardButton(text=cat, callback_data=f"acat:{cat}")] for cat in CATEGORIES]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
