@@ -564,8 +564,11 @@ async def cmd_debug_post(message: Message):
         await message.answer("❌ Пост не получен (None)")
         return
 
-    # Шлём сырой текст (первые 3000 символов)
-    await message.answer(f"📄 Сырой текст ({len(text)} симв.):\n<pre>{text[:3000].replace('<','&lt;')}</pre>", parse_mode="HTML")
+    # Шлём сырой текст частями по 3000 символов
+    raw = text.replace('<', '&lt;')
+    for i in range(0, min(len(raw), 9000), 3000):
+        chunk = raw[i:i+3000]
+        await message.answer(f"📄 Текст [{i}–{i+len(chunk)}]:\n<pre>{chunk}</pre>", parse_mode="HTML")
 
     # Показываем классификацию каждой строки
     report_lines = []
@@ -580,7 +583,6 @@ async def cmd_debug_post(message: Message):
         noise = bool(_TABLET_NOISE_RE.search(line))
         excluded = bool(_TABLET_EXCLUDE.search(line))
         has_ipad = bool(re.search(r"iPad|iPro\b", line, re.IGNORECASE))
-        from handlers import _classify_tablet_line
         cat = _classify_tablet_line(line, section)
         if price or has_ipad or s:
             short = line[:60].replace("<", "&lt;")
@@ -589,8 +591,15 @@ async def cmd_debug_post(message: Message):
                 f"  sect={section} cat={cat} price={price} noise={noise} excl={excluded}"
             )
 
-    report = "\n".join(report_lines[:40])
-    await message.answer(f"🔍 Классификация строк:\n{report}", parse_mode="HTML")
+    # Шлём классификацию частями по 3000 символов
+    chunk = ""
+    for entry in report_lines:
+        if len(chunk) + len(entry) > 3000:
+            await message.answer(f"🔍 Классификация:\n{chunk}", parse_mode="HTML")
+            chunk = ""
+        chunk += entry + "\n"
+    if chunk:
+        await message.answer(f"🔍 Классификация:\n{chunk}", parse_mode="HTML")
 
 
 @router.message(F.text == "/export")
