@@ -489,7 +489,28 @@ def _tablet_markup(price: int) -> int:
     return 2000
 
 
-def _is_tablet_price_line(line: str) -> bool:
+_TABLET_SECTION_RE = re.compile(
+    r"^\s*(?:iPad\s*Pro|iPro)\b|^\s*iPad\s*Air\b|^\s*iPad\s*[Mm]ini\b|^\s*iPad\b",
+    re.IGNORECASE
+)
+
+
+def _detect_tablet_section(line: str) -> str | None:
+    """Определяет секцию-заголовок (строка без цены, только название)."""
+    if _extract_tablet_price(line) is not None:
+        return None
+    if re.search(r"iPad\s*Pro|iPro\b", line, re.IGNORECASE):
+        return "ipad_pro"
+    if re.search(r"iPad\s*Air", line, re.IGNORECASE):
+        return "ipad_air"
+    if re.search(r"iPad\s*[Mm]ini", line, re.IGNORECASE):
+        return "ipad_mini"
+    if re.search(r"\biPad\b", line, re.IGNORECASE):
+        return "ipad"
+    return None
+
+
+def _is_tablet_price_line(line: str, section: str | None = None) -> bool:
     if _TABLET_EXCLUDE.search(line):
         return False
     if _TABLET_NOISE_RE.search(line):
@@ -497,26 +518,34 @@ def _is_tablet_price_line(line: str) -> bool:
     price = _extract_tablet_price(line)
     if price is None or price < 25000:
         return False
-    return bool(re.search(r"iPad|iPro\b", line, re.IGNORECASE))
+    # строка содержит iPad/iPro явно ИЛИ мы внутри секции
+    return bool(re.search(r"iPad|iPro\b", line, re.IGNORECASE)) or section is not None
 
 
-def _classify_tablet_line(line: str) -> str | None:
-    if not _is_tablet_price_line(line):
+def _classify_tablet_line(line: str, section: str | None = None) -> str | None:
+    if not _is_tablet_price_line(line, section):
         return None
-    # Порядок важен: Pro и Air и Mini раньше базового iPad
+    # Явное упоминание в строке имеет приоритет над секцией
     if re.search(r"iPad\s*Pro|iPro\b", line, re.IGNORECASE):
         return "ipad_pro"
     if re.search(r"iPad\s*Air", line, re.IGNORECASE):
         return "ipad_air"
-    if re.search(r"iPad\s*Mini|iPad\s*mini", line, re.IGNORECASE):
+    if re.search(r"iPad\s*[Mm]ini", line, re.IGNORECASE):
         return "ipad_mini"
-    return "ipad"
+    if re.search(r"\biPad\b", line, re.IGNORECASE):
+        return "ipad"
+    # Используем контекст секции
+    return section
 
 
 def _detect_tablet_categories(text: str) -> list[str]:
     found = set()
+    section = None
     for line in text.split("\n"):
-        cat = _classify_tablet_line(line)
+        s = _detect_tablet_section(line)
+        if s:
+            section = s
+        cat = _classify_tablet_line(line, section)
         if cat:
             found.add(cat)
     return list(found)
@@ -524,8 +553,12 @@ def _detect_tablet_categories(text: str) -> list[str]:
 
 def _split_tablet_by_category(text: str) -> dict[str, str]:
     lines_by_cat: dict[str, list] = {k: [] for k in TABLET_CATEGORIES}
+    section = None
     for line in text.split("\n"):
-        cat = _classify_tablet_line(line)
+        s = _detect_tablet_section(line)
+        if s:
+            section = s
+        cat = _classify_tablet_line(line, section)
         if cat:
             lines_by_cat[cat].append(line)
     result = {}
@@ -555,8 +588,12 @@ def _add_markup_to_tablet_prices(text: str) -> str:
 
     lines = text.split("\n")
     result = []
+    section = None
     for line in lines:
-        if _is_tablet_price_line(line):
+        s = _detect_tablet_section(line)
+        if s:
+            section = s
+        if _is_tablet_price_line(line, section):
             line = _TABLET_PRICE_RE.sub(replace_price, line)
         result.append(line)
     return "\n".join(result)
