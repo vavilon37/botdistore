@@ -16,6 +16,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = set(int(i) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip().isdigit())
+SOURCE_BOT_ID = int(os.getenv("SOURCE_BOT_ID", "0"))
 
 
 async def main():

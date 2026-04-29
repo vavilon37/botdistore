@@ -2533,11 +2533,17 @@ async def cb_mac_category(call: CallbackQuery):
 
 @router.message()
 async def handle_forwarded(message: Message):
-    from bot import ADMIN_IDS
-    if message.from_user.id not in ADMIN_IDS:
+    from bot import ADMIN_IDS, SOURCE_BOT_ID
+    uid = message.from_user.id if message.from_user else None
+
+    is_from_source_bot = SOURCE_BOT_ID and uid == SOURCE_BOT_ID
+    is_admin_forward = (
+        uid in ADMIN_IDS
+        and (message.forward_origin or message.forward_from_chat or message.forward_from)
+    )
+    if not (is_admin_forward or is_from_source_bot):
         return
-    if not (message.forward_origin or message.forward_from_chat or message.forward_from):
-        return
+
     text = message.text or message.caption or ""
     if not text:
         await message.answer("❌ Сообщение не содержит текста.")
