@@ -51,11 +51,12 @@ async def main():
         )
 
     async def monitor_loop():
+        silent_process = lambda b, a, t: process_price_text(b, a, t, silent=True)
         # Первый запуск — только сохраняем состояние, не обрабатываем
-        await check_and_process(bot, ADMIN_IDS, process_price_text)
+        await check_and_process(bot, ADMIN_IDS, silent_process)
         while True:
             await asyncio.sleep(CHECK_INTERVAL)
-            stats = await check_and_process(bot, ADMIN_IDS, process_price_text, force=True)
+            stats = await check_and_process(bot, ADMIN_IDS, silent_process, force=True)
             lines = [
                 "🔄 <b>Автообновление цен</b>",
                 f"📡 Постов получено: <b>{stats['fetched']}</b> / {len(TRACKED_POSTS)}",

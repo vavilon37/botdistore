@@ -2497,7 +2497,7 @@ async def cb_mac_category(call: CallbackQuery):
         await call.message.answer("◀️", reply_markup=kb.mac_back_kb())
 
 
-async def process_price_text(bot, admin_ids: set, text: str):
+async def process_price_text(bot, admin_ids: set, text: str, silent: bool = False):
     """Парсит текст поста и автоматически сохраняет цены в кэш."""
     series_list = _detect_series(text)
     mac_cats = [] if series_list else _detect_mac_categories(text)
@@ -2512,9 +2512,10 @@ async def process_price_text(bot, admin_ids: set, text: str):
             msgs = [m for m in msgs if m.strip()]
             cache[s] = {"msgs": msgs, "updated_at": _now_msk()}
         _save_cache(cache)
-        names = ", ".join(f"iPhone {s}" for s in split)
-        for aid in admin_ids:
-            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+        if not silent:
+            names = ", ".join(f"iPhone {s}" for s in split)
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
     elif mac_cats:
         split = _split_mac_by_category(text)
@@ -2525,9 +2526,10 @@ async def process_price_text(bot, admin_ids: set, text: str):
                 msgs = [m for m in msgs if m.strip()]
                 cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
         _save_mac_cache(cache)
-        names = ", ".join(MAC_CATEGORIES[c] for c in split if split[c].strip())
-        for aid in admin_ids:
-            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+        if not silent:
+            names = ", ".join(MAC_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
     elif hp_cats:
         split = _split_hp_by_category(text)
@@ -2538,9 +2540,10 @@ async def process_price_text(bot, admin_ids: set, text: str):
                 msgs = [m for m in msgs if m.strip()]
                 cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
         _save_hp_cache(cache)
-        names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
-        for aid in admin_ids:
-            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+        if not silent:
+            names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
     elif tab_cats:
         split = _split_tablet_by_category(text)
@@ -2551,18 +2554,20 @@ async def process_price_text(bot, admin_ids: set, text: str):
                 msgs = [m for m in msgs if m.strip()]
                 cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
         _save_tablets_cache(cache)
-        names = ", ".join(TABLET_CATEGORIES[c] for c in split if split[c].strip())
-        for aid in admin_ids:
-            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+        if not silent:
+            names = ", ".join(TABLET_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
     else:
-        preview = text[:200].replace("<", "&lt;")
-        for aid in admin_ids:
-            await bot.send_message(
-                aid,
-                f"⚠️ Авто: тип товара не определён.\n<code>{preview}</code>",
-                parse_mode="HTML"
-            )
+        if not silent:
+            preview = text[:200].replace("<", "&lt;")
+            for aid in admin_ids:
+                await bot.send_message(
+                    aid,
+                    f"⚠️ Авто: тип товара не определён.\n<code>{preview}</code>",
+                    parse_mode="HTML"
+                )
 
 
 # ══════════════════════════════════════════════════════
