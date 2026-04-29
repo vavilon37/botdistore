@@ -10,7 +10,7 @@ import database as db
 import keyboards as kb
 from handlers import router as user_router, process_price_text
 from admin import router as admin_router
-from price_monitor import check_and_process, CHECK_INTERVAL
+from price_monitor import check_and_process, CHECK_INTERVAL, TRACKED_POSTS
 
 load_dotenv()
 
@@ -55,7 +55,23 @@ async def main():
         await check_and_process(bot, ADMIN_IDS, process_price_text)
         while True:
             await asyncio.sleep(CHECK_INTERVAL)
-            await check_and_process(bot, ADMIN_IDS, process_price_text)
+            stats = await check_and_process(bot, ADMIN_IDS, process_price_text, force=True)
+            lines = [
+                "🔄 <b>Автообновление цен</b>",
+                f"📡 Постов получено: <b>{stats['fetched']}</b> / {len(TRACKED_POSTS)}",
+                f"✅ Обработано: <b>{stats['processed']}</b>",
+            ]
+            if stats["failed_fetch"]:
+                lines.append(f"⚠️ Недоступно: {len(stats['failed_fetch'])} постов")
+            if stats["errors"]:
+                for err in stats["errors"][:3]:
+                    lines.append(f"❌ {err}")
+            report = "\n".join(lines)
+            for aid in ADMIN_IDS:
+                try:
+                    await bot.send_message(aid, report, parse_mode="HTML")
+                except Exception:
+                    pass
 
     asyncio.create_task(monitor_loop())
 

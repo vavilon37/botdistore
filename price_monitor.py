@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 MONITOR_STATE_FILE = os.path.join(os.path.dirname(__file__), "monitor_state.json")
 
-CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300"))
+CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "3600"))
 
 TRACKED_POSTS = [
     # Айфоны
@@ -103,14 +103,15 @@ async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> st
         return None
 
 
-async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = False):
+async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = False) -> dict:
     """
     Проверяет посты на изменения. Для каждого изменённого поста
     вызывает process_text_fn(text) — функцию из handlers.py.
     force=True — обработать все посты принудительно, даже если не изменились.
+    Возвращает dict с итогами: fetched, processed, errors, failed_fetch.
     """
     state = _load_state()
-    changed = 0
+    stats = {"fetched": 0, "processed": 0, "errors": [], "failed_fetch": []}
 
     async with aiohttp.ClientSession() as session:
         tasks = [_fetch_post_text(session, p) for p in TRACKED_POSTS]
@@ -118,32 +119,33 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
 
     for post_path, text in zip(TRACKED_POSTS, results):
         if text is None:
+            stats["failed_fetch"].append(post_path)
             continue
+
+        stats["fetched"] += 1
         prev = state.get(post_path)
 
         if not force:
             if prev == text:
                 continue
-            changed += 1
             state[post_path] = text
             # Первый запуск — просто сохраняем, не обрабатываем
             if prev is None:
                 continue
         else:
             state[post_path] = text
-            changed += 1
 
         logger.info(f"{'[force] ' if force else ''}Обрабатываем пост {post_path}...")
         try:
             await process_text_fn(bot, admin_ids, text)
+            stats["processed"] += 1
         except Exception as e:
             logger.error(f"Ошибка обработки {post_path}: {e}")
-            for aid in admin_ids:
-                try:
-                    await bot.send_message(aid, f"⚠️ Ошибка обработки поста {post_path}: {e}")
-                except Exception:
-                    pass
+            stats["errors"].append(f"{post_path}: {e}")
 
     _save_state(state)
-    if changed:
-        logger.info(f"Монитор: {'принудительно ' if force else ''}обработано {changed} постов")
+    logger.info(
+        f"Монитор: получено {stats['fetched']}, обработано {stats['processed']}, "
+        f"ошибок {len(stats['errors'])}, недоступно {len(stats['failed_fetch'])}"
+    )
+    return stats
