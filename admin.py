@@ -7,6 +7,8 @@ import os
 import database as db
 import keyboards as kb
 import sheets_sync
+from price_monitor import check_and_process, TRACKED_POSTS
+from handlers import process_price_text
 
 router = Router()
 
@@ -527,6 +529,21 @@ async def cmd_sync_all(message: Message):
         parse_mode="HTML",
         reply_markup=kb.admin_menu()
     )
+
+
+@router.message(F.text == "🔄 Обновить цены")
+async def cmd_update_prices(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer(
+        f"⏳ Парсю {len(TRACKED_POSTS)} постов, подождите...",
+        reply_markup=kb.admin_menu()
+    )
+    try:
+        await check_and_process(message.bot, {message.from_user.id}, process_price_text, force=True)
+        await message.answer("✅ Цены обновлены!", reply_markup=kb.admin_menu())
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при обновлении: {e}", reply_markup=kb.admin_menu())
 
 
 @router.message(F.text == "/export")

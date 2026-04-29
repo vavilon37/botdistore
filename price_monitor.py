@@ -103,10 +103,11 @@ async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> st
         return None
 
 
-async def check_and_process(bot, admin_ids: set, process_text_fn):
+async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = False):
     """
     Проверяет посты на изменения. Для каждого изменённого поста
     вызывает process_text_fn(text) — функцию из handlers.py.
+    force=True — обработать все посты принудительно, даже если не изменились.
     """
     state = _load_state()
     changed = 0
@@ -119,17 +120,20 @@ async def check_and_process(bot, admin_ids: set, process_text_fn):
         if text is None:
             continue
         prev = state.get(post_path)
-        if prev == text:
-            continue
 
-        changed += 1
-        state[post_path] = text
+        if not force:
+            if prev == text:
+                continue
+            changed += 1
+            state[post_path] = text
+            # Первый запуск — просто сохраняем, не обрабатываем
+            if prev is None:
+                continue
+        else:
+            state[post_path] = text
+            changed += 1
 
-        # Первый запуск — просто сохраняем, не обрабатываем
-        if prev is None:
-            continue
-
-        logger.info(f"Изменился пост {post_path}, обрабатываем...")
+        logger.info(f"{'[force] ' if force else ''}Обрабатываем пост {post_path}...")
         try:
             await process_text_fn(bot, admin_ids, text)
         except Exception as e:
@@ -142,4 +146,4 @@ async def check_and_process(bot, admin_ids: set, process_text_fn):
 
     _save_state(state)
     if changed:
-        logger.info(f"Монитор: изменилось {changed} постов")
+        logger.info(f"Монитор: {'принудительно ' if force else ''}обработано {changed} постов")

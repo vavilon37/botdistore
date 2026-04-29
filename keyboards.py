@@ -152,7 +152,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="➕ Добавить iPhone"), KeyboardButton(text="➕ Добавить товар")],
         [KeyboardButton(text="✅ Продал товар"), KeyboardButton(text="📊 Синк в Sheets")],
         [KeyboardButton(text="📱 Смартфоны New"), KeyboardButton(text="🔍 Поиск по названию")],
-        [KeyboardButton(text="📢 Рассылка")],
+        [KeyboardButton(text="📢 Рассылка"), KeyboardButton(text="🔄 Обновить цены")],
         [KeyboardButton(text="◀️ Выйти из админки")],
     ], resize_keyboard=True)
 
