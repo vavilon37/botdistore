@@ -6,11 +6,13 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import CommandStart
 from aiogram.fsm.storage.memory import MemoryStorage
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import database as db
 import keyboards as kb
-from handlers import router as user_router
+from handlers import router as user_router, process_price_text
 from admin import router as admin_router
+from price_monitor import check_and_process, CHECK_INTERVAL
 
 load_dotenv()
 
@@ -49,6 +51,20 @@ async def main():
             parse_mode="HTML",
             reply_markup=menu
         )
+
+    # Планировщик мониторинга цен
+    scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
+    scheduler.add_job(
+        check_and_process,
+        "interval",
+        seconds=CHECK_INTERVAL,
+        args=[bot, ADMIN_IDS, process_price_text],
+        id="price_monitor"
+    )
+    scheduler.start()
+
+    # Первый запуск — только сохраняем состояние, не обрабатываем
+    await check_and_process(bot, ADMIN_IDS, process_price_text)
 
     print("Бот запущен...")
     await dp.start_polling(bot)

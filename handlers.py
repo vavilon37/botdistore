@@ -2531,6 +2531,74 @@ async def cb_mac_category(call: CallbackQuery):
         await call.message.answer("◀️", reply_markup=kb.mac_back_kb())
 
 
+async def process_price_text(bot, admin_ids: set, text: str):
+    """Парсит текст поста и автоматически сохраняет цены в кэш."""
+    series_list = _detect_series(text)
+    mac_cats = [] if series_list else _detect_mac_categories(text)
+    hp_cats = [] if (series_list or mac_cats) else _detect_hp_categories(text)
+    tab_cats = [] if (series_list or mac_cats or hp_cats) else _detect_tablet_categories(text)
+
+    if series_list:
+        split = _split_by_series(text, series_list) if len(series_list) > 1 else {series_list[0]: text}
+        cache = _load_cache()
+        for s, s_text in split.items():
+            msgs = [_add_markup_to_prices(_filter_iphone_lines(s_text))]
+            msgs = [m for m in msgs if m.strip()]
+            cache[s] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_cache(cache)
+        names = ", ".join(f"iPhone {s}" for s in split)
+        for aid in admin_ids:
+            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif mac_cats:
+        split = _split_mac_by_category(text)
+        cache = _load_mac_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_mac_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_mac_cache(cache)
+        names = ", ".join(MAC_CATEGORIES[c] for c in split if split[c].strip())
+        for aid in admin_ids:
+            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif hp_cats:
+        split = _split_hp_by_category(text)
+        cache = _load_hp_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_hp_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_hp_cache(cache)
+        names = ", ".join(HP_CATEGORIES[c] for c in split if split[c].strip())
+        for aid in admin_ids:
+            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif tab_cats:
+        split = _split_tablet_by_category(text)
+        cache = _load_tablets_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_tablet_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_tablets_cache(cache)
+        names = ", ".join(TABLET_CATEGORIES[c] for c in split if split[c].strip())
+        for aid in admin_ids:
+            await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    else:
+        preview = text[:200].replace("<", "&lt;")
+        for aid in admin_ids:
+            await bot.send_message(
+                aid,
+                f"⚠️ Авто: тип товара не определён.\n<code>{preview}</code>",
+                parse_mode="HTML"
+            )
+
+
 @router.message()
 async def handle_forwarded(message: Message):
     from bot import ADMIN_IDS, SOURCE_BOT_ID
