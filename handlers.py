@@ -306,10 +306,10 @@ def _mac_markup(price: int) -> int:
 
 # Строка мака должна содержать артикул Apple (буквы+цифры) или явное название модели
 _MAC_ARTICLE_RE = re.compile(
-    r"MacBook\s+(Pro|Air)|(?<!\w)Air\s+1[35]\b|(?<!\w)NEO\b|iMac\b|Mac\s+Mini\b|Mac\s+Studio\b"
+    r"MacBook\s+(Pro|Air)|(?<!\w)NEO\b|iMac\b|Mac\s+Mini\b|Mac\s+Studio\b"
     # Артикулы Apple: MW2V3, MGDN4, MDE04, MWUC3, MCX04, MX2F3, Z1AW0000S, MU9E3
-    # Формат: 1-2 буквы, затем чередование цифр/букв, минимум 4 символа итого
-    r"|(?<![A-Za-z])(?:[A-Z]\d|\d[A-Z]|[A-Z]{2,})\w{2,5}\b",
+    # Обязательно содержат и буквы и цифры (не просто слово типа Grey/Blue)
+    r"|(?<![A-Za-z])\[?(?!iPad|iPhone|iPro)[A-Z]{1,2}\d[A-Z0-9]{2,5}\]?\b",
     re.IGNORECASE
 )
 
@@ -351,7 +351,7 @@ def _classify_mac_line(line: str, section: str | None = None) -> str | None:
     # Pro раньше Air — "MacBook Pro" не должен попасть в Air
     if re.search(r"MacBook\s+Pro|\bPro\s+1[46]\b|\bPro\s+14\b", line, re.IGNORECASE):
         return "macbook_pro"
-    if re.search(r"MacBook\s+Air|(?<!\w)Air\s+1[35]\b|NEO\b", line, re.IGNORECASE):
+    if re.search(r"MacBook\s+Air|NEO\b", line, re.IGNORECASE):
         return "macbook_air"
     if re.search(r"iMac\b", line, re.IGNORECASE):
         return "imac"
