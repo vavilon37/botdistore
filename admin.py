@@ -601,6 +601,21 @@ async def cmd_debug_post(message: Message):
     if chunk:
         await message.answer(f"🔍 Классификация:\n{chunk}", parse_mode="HTML")
 
+    # Проверяем как process_price_text определяет тип
+    from handlers import _detect_series, _detect_mac_categories, _detect_hp_categories, _detect_tablet_categories
+    series = _detect_series(text)
+    mac = [] if series else _detect_mac_categories(text)
+    hp = [] if (series or mac) else _detect_hp_categories(text)
+    tab = [] if (series or mac or hp) else _detect_tablet_categories(text)
+    await message.answer(
+        f"🧠 <b>Определение типа:</b>\n"
+        f"iPhone серии: {series}\n"
+        f"Mac категории: {mac}\n"
+        f"HP категории: {hp}\n"
+        f"Tablet категории: {tab}",
+        parse_mode="HTML"
+    )
+
 
 @router.message(F.text == "/export")
 async def cmd_export(message: Message):
