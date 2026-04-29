@@ -808,7 +808,9 @@ async def cb_new_series(call: CallbackQuery):
     for i, block in enumerate(price_blocks):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
-        if i == 0:
+        if i == 0 and is_last_block and not footnote_combined:
+            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
+        elif i == 0:
             await call.message.edit_text(body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
@@ -897,7 +899,9 @@ async def cb_hp_category(call: CallbackQuery):
     for i, block in enumerate(price_blocks):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
-        if i == 0:
+        if i == 0 and is_last_block and not footnote_combined:
+            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
+        elif i == 0:
             await call.message.edit_text(body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
@@ -2305,7 +2309,9 @@ async def cb_tablet_category(call: CallbackQuery):
     for i, block in enumerate(price_blocks):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
-        if i == 0:
+        if i == 0 and is_last_block and not footnote_combined:
+            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
+        elif i == 0:
             await call.message.edit_text(body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
@@ -2469,7 +2475,9 @@ async def cb_mac_category(call: CallbackQuery):
     for i, block in enumerate(price_blocks):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
-        if i == 0:
+        if i == 0 and is_last_block and not footnote_combined:
+            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
+        elif i == 0:
             await call.message.edit_text(body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
