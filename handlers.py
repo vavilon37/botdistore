@@ -2513,6 +2513,227 @@ async def process_price_text(bot, admin_ids: set, text: str):
             )
 
 
+# ══════════════════════════════════════════════════════
+#  ВЫКУП УСТРОЙСТВ
+# ══════════════════════════════════════════════════════
+
+BUYOUT_KIT_OPTIONS = ["Коробка", "Шнур", "Блок", "Чехол"]
+
+
+class BuyoutState(StatesGroup):
+    photos = State()
+    condition = State()
+    screen = State()
+    body = State()
+    battery = State()
+    kit = State()
+    price = State()
+    username = State()
+
+
+@router.message(F.text == "💰 Выкуп")
+async def cmd_buyout(message: Message, state: FSMContext):
+    await message.answer(
+        "📋 <b>Выкуп устройств</b>\n\n"
+        "Для оценки вашего устройства нам понадобится:\n\n"
+        "1️⃣ Фото телефона (до 10 штук)\n"
+        "2️⃣ Общее состояние телефона — по шкале от 1 до 10\n"
+        "3️⃣ Состояние экрана — по шкале от 1 до 10\n"
+        "4️⃣ Состояние корпуса — по шкале от 1 до 10\n"
+        "5️⃣ Состояние АКБ — в процентах\n"
+        "6️⃣ Комплектация\n"
+        "7️⃣ Желаемая цена\n"
+        "8️⃣ Ваш Telegram\n\n"
+        "Если есть вопросы — пишите @idistoreman",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_start_kb()
+    )
+
+
+@router.callback_query(F.data == "buyout:start")
+async def buyout_start(call: CallbackQuery, state: FSMContext):
+    await state.set_state(BuyoutState.photos)
+    await state.update_data(photos=[])
+    await call.message.edit_text(
+        "📸 <b>Шаг 1 из 8 — Фото</b>\n\n"
+        "Отправьте фотографии устройства (до 10 штук).\n"
+        "Когда закончите — нажмите <b>Готово</b>.",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_photos_done_kb()
+    )
+
+
+@router.message(BuyoutState.photos, F.photo)
+async def buyout_photo(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photos = data.get("photos", [])
+    if len(photos) >= 10:
+        await message.answer("Максимум 10 фото. Нажмите <b>Готово</b>.", parse_mode="HTML")
+        return
+    photos.append(message.photo[-1].file_id)
+    await state.update_data(photos=photos)
+    await message.answer(
+        f"✅ Фото {len(photos)} добавлено. Отправьте ещё или нажмите <b>Готово</b>.",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_photos_done_kb()
+    )
+
+
+@router.callback_query(F.data == "buyout:photos_done", BuyoutState.photos)
+async def buyout_photos_done(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if not data.get("photos"):
+        await call.answer("Добавьте хотя бы одно фото!", show_alert=True)
+        return
+    await state.set_state(BuyoutState.condition)
+    await call.message.edit_text(
+        "📊 <b>Шаг 2 из 8 — Общее состояние</b>\n\n"
+        "Оцените общее состояние телефона по шкале от <b>1</b> до <b>10</b>:",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_score_kb("buyout_cond")
+    )
+
+
+@router.callback_query(F.data.startswith("buyout_cond:"), BuyoutState.condition)
+async def buyout_condition(call: CallbackQuery, state: FSMContext):
+    score = call.data.split(":")[1]
+    await state.update_data(condition=score)
+    await state.set_state(BuyoutState.screen)
+    await call.message.edit_text(
+        "🖥 <b>Шаг 3 из 8 — Состояние экрана</b>\n\n"
+        "Оцените состояние экрана по шкале от <b>1</b> до <b>10</b>:",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_score_kb("buyout_screen")
+    )
+
+
+@router.callback_query(F.data.startswith("buyout_screen:"), BuyoutState.screen)
+async def buyout_screen(call: CallbackQuery, state: FSMContext):
+    score = call.data.split(":")[1]
+    await state.update_data(screen=score)
+    await state.set_state(BuyoutState.body)
+    await call.message.edit_text(
+        "📦 <b>Шаг 4 из 8 — Состояние корпуса</b>\n\n"
+        "Оцените состояние корпуса по шкале от <b>1</b> до <b>10</b>:",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_score_kb("buyout_body")
+    )
+
+
+@router.callback_query(F.data.startswith("buyout_body:"), BuyoutState.body)
+async def buyout_body(call: CallbackQuery, state: FSMContext):
+    score = call.data.split(":")[1]
+    await state.update_data(body=score)
+    await state.set_state(BuyoutState.battery)
+    await call.message.edit_text(
+        "🔋 <b>Шаг 5 из 8 — Состояние АКБ</b>\n\n"
+        "Введите уровень заряда аккумулятора в <b>процентах</b> (например: <code>87</code>):",
+        parse_mode="HTML"
+    )
+
+
+@router.message(BuyoutState.battery)
+async def buyout_battery(message: Message, state: FSMContext):
+    txt = (message.text or "").strip().replace("%", "")
+    if not txt.isdigit() or not (1 <= int(txt) <= 100):
+        await message.answer("Введите число от 1 до 100 (например: 87).")
+        return
+    await state.update_data(battery=txt)
+    await state.set_state(BuyoutState.kit)
+    await state.update_data(kit=[])
+    await message.answer(
+        "🎁 <b>Шаг 6 из 8 — Комплектация</b>\n\n"
+        "Отметьте что есть в комплекте, затем нажмите <b>Готово</b>:",
+        parse_mode="HTML",
+        reply_markup=kb.buyout_kit_kb([])
+    )
+
+
+@router.callback_query(F.data.startswith("buyout_kit:"), BuyoutState.kit)
+async def buyout_kit_toggle(call: CallbackQuery, state: FSMContext):
+    item = call.data.split(":", 1)[1]
+    if item == "done":
+        data = await state.get_data()
+        await state.set_state(BuyoutState.price)
+        kit_text = ", ".join(data.get("kit", [])) or "Только телефон"
+        await call.message.edit_text(
+            f"✅ Комплект: {kit_text}\n\n"
+            "💰 <b>Шаг 7 из 8 — Желаемая цена</b>\n\n"
+            "Введите желаемую цену в рублях (только цифры):",
+            parse_mode="HTML"
+        )
+        return
+    data = await state.get_data()
+    kit = data.get("kit", [])
+    if item in kit:
+        kit.remove(item)
+    else:
+        kit.append(item)
+    await state.update_data(kit=kit)
+    await call.message.edit_reply_markup(reply_markup=kb.buyout_kit_kb(kit))
+
+
+@router.message(BuyoutState.price)
+async def buyout_price(message: Message, state: FSMContext):
+    txt = (message.text or "").strip().replace(" ", "").replace(",", "")
+    if not txt.isdigit():
+        await message.answer("Введите только цифры (например: 35000).")
+        return
+    await state.update_data(price=txt)
+    await state.set_state(BuyoutState.username)
+    await message.answer(
+        "👤 <b>Шаг 8 из 8 — Ваш Telegram</b>\n\n"
+        "Введите ваш username (например: <code>@username</code>) или номер телефона:",
+        parse_mode="HTML"
+    )
+
+
+@router.message(BuyoutState.username)
+async def buyout_username(message: Message, state: FSMContext):
+    username = (message.text or "").strip()
+    data = await state.get_data()
+    await state.update_data(username=username)
+    await state.clear()
+
+    kit_text = ", ".join(data.get("kit", [])) or "Только телефон"
+    summary = (
+        f"✅ <b>Заявка на выкуп отправлена!</b>\n\n"
+        f"Мы рассмотрим вашу заявку и свяжемся с вами в ближайшее время.\n\n"
+        f"Если есть вопросы — пишите @idistoreman"
+    )
+    await message.answer(summary, parse_mode="HTML", reply_markup=kb.main_menu())
+
+    # Уведомление в админку
+    from bot import ADMIN_IDS
+    admin_text = (
+        f"📥 <b>Новая заявка на выкуп!</b>\n\n"
+        f"👤 Пользователь: {message.from_user.full_name}"
+        + (f" (@{message.from_user.username})" if message.from_user.username else "")
+        + f"\n📞 Контакт: {username}\n\n"
+        f"📊 Общее состояние: <b>{data.get('condition')}/10</b>\n"
+        f"🖥 Экран: <b>{data.get('screen')}/10</b>\n"
+        f"📦 Корпус: <b>{data.get('body')}/10</b>\n"
+        f"🔋 АКБ: <b>{data.get('battery')}%</b>\n"
+        f"🎁 Комплект: <b>{kit_text}</b>\n"
+        f"💰 Желаемая цена: <b>{int(data.get('price', 0)):,} ₽</b>"
+    )
+    photos = data.get("photos", [])
+    bot = message.bot
+    for aid in ADMIN_IDS:
+        try:
+            if len(photos) == 1:
+                await bot.send_photo(aid, photos[0], caption=admin_text, parse_mode="HTML")
+            elif len(photos) > 1:
+                from aiogram.types import InputMediaPhoto
+                media = [InputMediaPhoto(media=photos[0], caption=admin_text, parse_mode="HTML")]
+                media += [InputMediaPhoto(media=p) for p in photos[1:]]
+                await bot.send_media_group(aid, media)
+            else:
+                await bot.send_message(aid, admin_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+
 @router.message()
 async def handle_forwarded(message: Message):
     from bot import ADMIN_IDS, SOURCE_BOT_ID

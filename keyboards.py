@@ -11,7 +11,7 @@ def main_menu() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🎧 Наушники"), KeyboardButton(text="🔌 Аксессуары")],
         [KeyboardButton(text="📟 Планшеты"), KeyboardButton(text="🖥 Маки")],
         [KeyboardButton(text="🔍 Поиск по названию"), KeyboardButton(text="💰 Фильтр")],
-        [KeyboardButton(text="🍎 Рынок б/у iPhone")],
+        [KeyboardButton(text="🍎 Рынок б/у iPhone"), KeyboardButton(text="💰 Выкуп")],
         [KeyboardButton(text="❤️ Избранное")],
         [KeyboardButton(text="🔧 Сервис"), KeyboardButton(text="ℹ️ О боте")],
     ], resize_keyboard=True)
@@ -327,6 +327,34 @@ def tablet_preview_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="✅ Сохранить", callback_data="tab_preview:save")],
         [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="tab_preview:edit_notes")],
     ])
+
+
+def buyout_start_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Отправить заявку", callback_data="buyout:start")],
+    ])
+
+
+def buyout_photos_done_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Готово", callback_data="buyout:photos_done")],
+    ])
+
+
+def buyout_score_kb(prefix: str) -> InlineKeyboardMarkup:
+    row1 = [InlineKeyboardButton(text=str(i), callback_data=f"{prefix}:{i}") for i in range(1, 6)]
+    row2 = [InlineKeyboardButton(text=str(i), callback_data=f"{prefix}:{i}") for i in range(6, 11)]
+    return InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+
+
+def buyout_kit_kb(selected: list) -> InlineKeyboardMarkup:
+    from handlers import BUYOUT_KIT_OPTIONS
+    buttons = []
+    for item in BUYOUT_KIT_OPTIONS:
+        label = f"✅ {item}" if item in selected else item
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"buyout_kit:{item}")])
+    buttons.append([InlineKeyboardButton(text="✅ Готово", callback_data="buyout_kit:done")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def admin_categories_kb() -> InlineKeyboardMarkup:
