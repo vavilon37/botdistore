@@ -467,7 +467,7 @@ _TABLET_NOISE_RE = re.compile(
 )
 
 _TABLET_PRICE_RE = re.compile(
-    r"(?:[-—]\s*|(?<=\s))(\d{2,3})[.](\d{3})\b"
+    r"(?:[-—]\s*|(?<=\s))(\d{2,3})[.](\d{2,3})\b"
     r"|(?:[-—]\s*)(\d{2,3})(\d{3})\b"
 )
 
@@ -475,7 +475,8 @@ _TABLET_PRICE_RE = re.compile(
 def _extract_tablet_price(line: str) -> int | None:
     for m in _TABLET_PRICE_RE.finditer(line):
         if m.group(1) is not None:
-            return int(m.group(1)) * 1000 + int(m.group(2))
+            frac = m.group(2).ljust(3, "0")
+            return int(m.group(1)) * 1000 + int(frac)
         if m.group(3) is not None:
             return int(m.group(3)) * 1000 + int(m.group(4))
     return None
@@ -571,7 +572,8 @@ def _split_tablet_by_category(text: str) -> dict[str, str]:
 def _add_markup_to_tablet_prices(text: str) -> str:
     def replace_price(m):
         if m.group(1) is not None:
-            price = int(m.group(1)) * 1000 + int(m.group(2))
+            frac = m.group(2).ljust(3, "0")
+            price = int(m.group(1)) * 1000 + int(frac)
             new_price = price + _tablet_markup(price)
             return m.group(0).replace(
                 m.group(1) + "." + m.group(2),
