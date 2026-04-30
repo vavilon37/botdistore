@@ -636,25 +636,61 @@ _SAMSUNG_EXCLUDE = re.compile(
     re.IGNORECASE
 )
 
-_SAMSUNG_PRICE_RE = re.compile(r"(\d{1,3})[.](\d{3})")
+# Цены в посте бывают двух форматов:
+#   с точкой:  72.000  /  48.000  /  69.900
+#   без точки: 7000  /  34200  /  113500
+_SAMSUNG_PRICE_DOT_RE = re.compile(r"(\d{1,3})[.](\d{3})")
+_SAMSUNG_PRICE_PLAIN_RE = re.compile(r"\b(\d{4,6})\b")
+
+# Строки с моделями Samsung — без слова "Galaxy", как в реальном прайсе:
+#   A06, A56, S24, S25 FE, S25+, S25 Ultra, Z Fold 6, Z Fold7
+_SAMSUNG_MODEL_RE = re.compile(
+    r"(?<![A-Za-z\d])"          # не внутри слова
+    r"(?:"
+    r"[AaАа]\d{2}\b"            # A06, A17, A36, A56, A57 и т.д.
+    r"|S\d{2,3}(?:\s*(?:FE|Plus|\+|Ultra))?\b"  # S24, S25, S25 FE, S25+, S25 Ultra, S26 и т.д.
+    r"|Z\s+Fold\s*\d+"          # Z Fold 6, Z Fold7
+    r")"
+)
+
+# Минимальная цена Samsung (убираем мусор типа "4/64" или "8/128")
+_SAMSUNG_PRICE_MIN = 5000
+
+
+def _extract_samsung_price(line: str) -> int | None:
+    """Извлекает цену из строки Samsung. Возвращает None если цены нет."""
+    # Сначала ищем формат с точкой (72.000)
+    for m in _SAMSUNG_PRICE_DOT_RE.finditer(line):
+        price = int(m.group(1)) * 1000 + int(m.group(2))
+        if price >= _SAMSUNG_PRICE_MIN:
+            return price
+    # Потом без точки (7000, 34200)
+    for m in _SAMSUNG_PRICE_PLAIN_RE.finditer(line):
+        price = int(m.group(1))
+        if price >= _SAMSUNG_PRICE_MIN:
+            return price
+    return None
 
 
 def _is_samsung_price_line(line: str) -> bool:
     if _SAMSUNG_EXCLUDE.search(line):
         return False
-    has_model = bool(re.search(r"\bGalaxy\s+(S|A|Z)\d", line, re.IGNORECASE))
-    has_price = bool(_SAMSUNG_PRICE_RE.search(line))
-    return has_model and has_price
+    if not _SAMSUNG_MODEL_RE.search(line):
+        return False
+    return _extract_samsung_price(line) is not None
 
 
 def _classify_samsung_line(line: str) -> str | None:
     if not _is_samsung_price_line(line):
         return None
-    if re.search(r"\bGalaxy\s+Z\b", line, re.IGNORECASE):
+    # Z Fold — проверяем первым (более специфично)
+    if re.search(r"\bZ\s+Fold", line, re.IGNORECASE):
         return "galaxy_z"
-    if re.search(r"\bGalaxy\s+S\d", line, re.IGNORECASE):
+    # S-серия: S24, S25, S25 FE, S25+, S25 Ultra, S26 и т.д.
+    if re.search(r"\bS\d{2,3}\b", line):
         return "galaxy_s"
-    if re.search(r"\bGalaxy\s+A\d", line, re.IGNORECASE):
+    # A-серия: A06, A17, A36 и т.д.
+    if re.search(r"\b[AaАа]\d{2}\b", line):
         return "galaxy_a"
     return None
 
@@ -685,14 +721,28 @@ def _add_markup_to_samsung_prices(text: str) -> str:
     lines = text.split("\n")
     result = []
     for line in lines:
-        if _is_samsung_price_line(line):
-            def replace_price(m):
-                price = int(m.group(1)) * 1000 + int(m.group(2))
+        if not _is_samsung_price_line(line):
+            result.append(line)
+            continue
+        # Заменяем цену с точкой (72.000 → 74.000)
+        def replace_dot(m):
+            price = int(m.group(1)) * 1000 + int(m.group(2))
+            if price < _SAMSUNG_PRICE_MIN:
+                return m.group(0)
+            new_price = price + SAMSUNG_MARKUP
+            return f"{new_price // 1000}.{new_price % 1000:03d}"
+        new_line = _SAMSUNG_PRICE_DOT_RE.sub(replace_dot, line)
+        # Если цена была без точки — ищем и заменяем
+        if new_line == line:
+            def replace_plain(m):
+                price = int(m.group(1))
+                if price < _SAMSUNG_PRICE_MIN:
+                    return m.group(0)
                 new_price = price + SAMSUNG_MARKUP
-                return f"{new_price // 1000}.{new_price % 1000:03d}"
-            line = _SAMSUNG_PRICE_RE.sub(replace_price, line)
-            line = line.rstrip("* ")
-        result.append(line)
+                return str(new_price)
+            new_line = _SAMSUNG_PRICE_PLAIN_RE.sub(replace_plain, line)
+        new_line = new_line.rstrip("* ")
+        result.append(new_line)
     return "\n".join(result)
 
 
