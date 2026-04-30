@@ -35,6 +35,8 @@ TRACKED_POSTS = [
     "BigSaleApple/12266",
     # Эирподы
     "BigSaleApple/12252",
+    # Samsung
+    "BigSaleApple/11198",
 ]
 
 HEADERS = {

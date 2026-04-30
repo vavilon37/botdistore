@@ -616,6 +616,98 @@ def _save_tablets_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+# ══════════════════════════════════════════════════════
+#  SAMSUNG
+# ══════════════════════════════════════════════════════
+
+SAMSUNG_CACHE_FILE = os.path.join(os.path.dirname(__file__), "samsung_cache.json")
+SAMSUNG_MARKUP = 2000
+
+SAMSUNG_CATEGORIES = {
+    "galaxy_s": "Galaxy S",
+    "galaxy_a": "Galaxy A",
+    "galaxy_z": "Galaxy Z",
+}
+
+_SAMSUNG_EXCLUDE = re.compile(
+    r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
+    r"|уцен|замена|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
+    r"|состояние|б/у|БУ\b|used|refurb|витрин",
+    re.IGNORECASE
+)
+
+_SAMSUNG_PRICE_RE = re.compile(r"(\d{1,3})[.](\d{3})")
+
+
+def _is_samsung_price_line(line: str) -> bool:
+    if _SAMSUNG_EXCLUDE.search(line):
+        return False
+    has_model = bool(re.search(r"\bGalaxy\s+(S|A|Z)\d", line, re.IGNORECASE))
+    has_price = bool(_SAMSUNG_PRICE_RE.search(line))
+    return has_model and has_price
+
+
+def _classify_samsung_line(line: str) -> str | None:
+    if not _is_samsung_price_line(line):
+        return None
+    if re.search(r"\bGalaxy\s+Z\b", line, re.IGNORECASE):
+        return "galaxy_z"
+    if re.search(r"\bGalaxy\s+S\d", line, re.IGNORECASE):
+        return "galaxy_s"
+    if re.search(r"\bGalaxy\s+A\d", line, re.IGNORECASE):
+        return "galaxy_a"
+    return None
+
+
+def _detect_samsung_categories(text: str) -> list[str]:
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_samsung_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
+
+
+def _split_samsung_by_category(text: str) -> dict[str, str]:
+    lines_by_cat: dict[str, list] = {k: [] for k in SAMSUNG_CATEGORIES}
+    for line in text.split("\n"):
+        cat = _classify_samsung_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            result[cat] = "\n".join(lines).strip()
+    return result
+
+
+def _add_markup_to_samsung_prices(text: str) -> str:
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if _is_samsung_price_line(line):
+            def replace_price(m):
+                price = int(m.group(1)) * 1000 + int(m.group(2))
+                new_price = price + SAMSUNG_MARKUP
+                return f"{new_price // 1000}.{new_price % 1000:03d}"
+            line = _SAMSUNG_PRICE_RE.sub(replace_price, line)
+            line = line.rstrip("* ")
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_samsung_cache() -> dict:
+    if os.path.exists(SAMSUNG_CACHE_FILE):
+        with open(SAMSUNG_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_samsung_cache(cache: dict):
+    with open(SAMSUNG_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -750,9 +842,57 @@ async def cb_new_type_iphone(call: CallbackQuery):
     )
 
 
-@router.callback_query(F.data == "new_type:other")
-async def cb_new_type_other(call: CallbackQuery):
-    await call.answer("Раздел пока в разработке", show_alert=True)
+@router.callback_query(F.data == "new_type:samsung")
+async def cb_new_type_samsung(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cache = _load_samsung_cache()
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not cache:
+        if is_admin:
+            await call.answer("⚠️ Цены Samsung не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    lines = ["📱 <b>Samsung — актуальные цены</b>\n"]
+    for cat_key, cat_name in SAMSUNG_CATEGORIES.items():
+        entry = cache.get(cat_key)
+        if not entry:
+            continue
+        updated = entry.get("updated_at", "—")
+        msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else [])
+        if not msgs:
+            continue
+        lines.append(f"<b>{cat_name}</b>  🕐 {updated}\n{msgs[0]}\n")
+
+    if len(lines) == 1:
+        if is_admin:
+            await call.answer("⚠️ Цены Samsung не загружены.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    disclaimer = "⚠️ Цены актуальны на момент последнего обновления. Для уточнения пишите @idistoreman\n\n"
+    full_text = disclaimer + "\n".join(lines)
+
+    # Разбиваем на части если текст слишком длинный
+    if len(full_text) <= 4096:
+        await call.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
+    else:
+        chunks = []
+        current = disclaimer
+        for chunk in lines[1:]:
+            if len(current) + len(chunk) > 4000:
+                chunks.append(current)
+                current = chunk
+            else:
+                current += "\n" + chunk
+        if current:
+            chunks.append(current)
+        await call.message.edit_text(chunks[0], parse_mode="HTML", reply_markup=kb.samsung_back_kb())
+        for chunk in chunks[1:]:
+            await call.message.answer(chunk, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
 
 
 @router.callback_query(F.data == "new_type:back")
@@ -2556,6 +2696,20 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
         _save_tablets_cache(cache)
         if not silent:
             names = ", ".join(TABLET_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif _detect_samsung_categories(text):
+        split = _split_samsung_by_category(text)
+        cache = _load_samsung_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_samsung_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_samsung_cache(cache)
+        if not silent:
+            names = ", ".join(SAMSUNG_CATEGORIES[c] for c in split if split[c].strip())
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 

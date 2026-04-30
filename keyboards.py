@@ -232,7 +232,7 @@ def subscriptions_kb(subs: list[str]) -> InlineKeyboardMarkup:
 def new_smartphones_type_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🍎 iPhone", callback_data="new_type:iphone")],
-        [InlineKeyboardButton(text="📱 Другие", callback_data="new_type:other")],
+        [InlineKeyboardButton(text="📱 Samsung", callback_data="new_type:samsung")],
     ])
 
 
@@ -326,6 +326,12 @@ def tablet_preview_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Сохранить", callback_data="tab_preview:save")],
         [InlineKeyboardButton(text="✏️ Изменить пометки", callback_data="tab_preview:edit_notes")],
+    ])
+
+
+def samsung_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к смартфонам", callback_data="new_type:back")],
     ])
 
 
