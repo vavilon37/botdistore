@@ -109,7 +109,7 @@ def _split_by_series(text: str, series_list: list[str]) -> dict[str, str]:
         # Определяем к какой серии относится строка
         matched = False
         for s in series_list:
-            if re.match(rf"^\s*{s}\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{{2,4}}\b)", line, re.IGNORECASE):
+            if re.match(rf"^\s*(iPhone\s+)?{s}\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{{2,4}}\b)", line, re.IGNORECASE):
                 price_lines_by_series[s].append(line)
                 matched = True
                 break
@@ -136,11 +136,11 @@ _EXCLUDE_LINE_PATTERNS = re.compile(
 
 
 def _is_iphone_price_line(line: str) -> bool:
-    """Строка с ценой на iPhone: начинается с номера серии 12-17."""
+    """Строка с ценой на iPhone: начинается с номера серии 12-17 или 'iPhone 12-17'."""
     if _EXCLUDE_LINE_PATTERNS.search(line):
         return False
     has_model_start = bool(re.match(
-        r"^\s*1[2-7]\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{2,4}\b)",
+        r"^\s*(iPhone\s+)?1[2-7]\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{2,4}\b)",
         line, re.IGNORECASE
     ))
     has_price = bool(re.search(r"\d{2,3}[.]\d{3}", line))
