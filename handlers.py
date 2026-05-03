@@ -2710,9 +2710,13 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
         split = _split_by_series(text, series_list) if len(series_list) > 1 else {series_list[0]: text}
         cache = _load_cache()
         for s, s_text in split.items():
-            msgs = [_add_markup_to_prices(_filter_iphone_lines(s_text))]
-            msgs = [m for m in msgs if m.strip()]
-            cache[s] = {"msgs": msgs, "updated_at": _now_msk()}
+            new_msgs = [_add_markup_to_prices(_filter_iphone_lines(s_text))]
+            new_msgs = [m for m in new_msgs if m.strip()]
+            if not new_msgs:
+                continue
+            existing = cache.get(s, {})
+            old_msgs = existing.get("msgs", [])
+            cache[s] = {"msgs": old_msgs + new_msgs, "updated_at": _now_msk()}
         _save_cache(cache)
         if not silent:
             names = ", ".join(f"iPhone {s}" for s in split)
