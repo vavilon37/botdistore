@@ -254,7 +254,7 @@ def _add_markup_to_hp_prices(text: str) -> str:
                 new_price = price + _markup
                 return f"{new_price // 1000}.{new_price % 1000:03d}"
             line = price_pattern.sub(replace_price, line)
-            line = line.rstrip("* ")
+            line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
 
@@ -439,7 +439,7 @@ def _add_markup_to_mac_prices(text: str) -> str:
     for line in lines:
         if _is_mac_price_line(line):
             line = _MAC_PRICE_RE.sub(replace_price, line)
-            line = line.rstrip("* ")
+            line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
 
@@ -611,7 +611,7 @@ def _add_markup_to_tablet_prices(text: str) -> str:
             section = s
         if _is_tablet_price_line(line, section):
             line = _TABLET_PRICE_RE.sub(replace_price, line)
-            line = line.rstrip("* ")
+            line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
 
@@ -753,7 +753,7 @@ def _add_markup_to_samsung_prices(text: str) -> str:
                 new_price = price + SAMSUNG_MARKUP
                 return str(new_price)
             new_line = _SAMSUNG_PRICE_PLAIN_RE.sub(replace_plain, line)
-        new_line = new_line.rstrip("* ")
+        new_line = new_line.replace("*", "").strip()
         result.append(new_line)
     return "\n".join(result)
 
@@ -893,7 +893,7 @@ def _add_markup_to_pixel_prices(text: str) -> str:
             return m.group(0)
 
         line = _PIXEL_PRICE_RE.sub(_replace, line)
-        line = line.rstrip("* ")
+        line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
 
@@ -955,7 +955,7 @@ def _add_markup_to_prices(text: str) -> str:
                 new_price = price + PRICE_MARKUP
                 return f"{new_price // 1000}.{new_price % 1000:03d}"
             line = price_pattern.sub(replace_price, line)
-            line = line.rstrip("* ")
+            line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
 
