@@ -233,6 +233,13 @@ def new_smartphones_type_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🍎 iPhone", callback_data="new_type:iphone")],
         [InlineKeyboardButton(text="📱 Samsung", callback_data="new_type:samsung")],
+        [InlineKeyboardButton(text="📱 Pixel / OnePlus", callback_data="new_type:pixel")],
+    ])
+
+
+def pixel_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к смартфонам", callback_data="new_type:back")],
     ])
 
 

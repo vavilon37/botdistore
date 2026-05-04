@@ -770,6 +770,146 @@ def _save_samsung_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+# ══════════════════════════════════════════════════════
+#  PIXEL / ONEPLUS / NOTHING
+# ══════════════════════════════════════════════════════
+
+PIXEL_CACHE_FILE = os.path.join(os.path.dirname(__file__), "pixel_cache.json")
+PIXEL_MARKUP = 2000
+
+PIXEL_CATEGORIES = {
+    "pixel": "Google Pixel",
+    "oneplus": "OnePlus / Nothing",
+}
+
+_PIXEL_EXCLUDE = re.compile(
+    r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин"
+    r"|мятый\s*угол|мятая\s*коробка|царап|скол|трещ",
+    re.IGNORECASE
+)
+
+# Цена: число после дефиса/тире (53000, 57 000) или с точкой (43.500), или в конце строки
+_PIXEL_PRICE_RE = re.compile(
+    r"[-—]\s*(\d{2,3})[.](\d{3})\b"   # -43.500
+    r"|[-—]\s*(\d{4,6})\b"            # -53000
+    r"|(?<!\d)(\d{2,3})[.](\d{3})\b"  # 43.500 без дефиса
+    r"|(?<!\d)(\d{4,6})\b(?!\s*[Gg][Bb]|[Тт][Бб]|\s*[Гг][Бб]|\s*/)"  # 46500 без дефиса, не RAM/storage
+)
+
+_PIXEL_MODEL_RE = re.compile(
+    r"\bPixel\s+\d|Google\s+Pixel|OnePlus\s+\d|OnePlus\s+Nord|Nothing\s+Phone",
+    re.IGNORECASE
+)
+
+_PIXEL_PRICE_MIN = 20000
+
+
+def _extract_pixel_price(line: str) -> int | None:
+    for m in _PIXEL_PRICE_RE.finditer(line):
+        if m.group(1) is not None:
+            price = int(m.group(1)) * 1000 + int(m.group(2))
+        elif m.group(3) is not None:
+            price = int(m.group(3))
+        elif m.group(4) is not None:
+            price = int(m.group(4)) * 1000 + int(m.group(5))
+        elif m.group(6) is not None:
+            price = int(m.group(6))
+        else:
+            continue
+        if price >= _PIXEL_PRICE_MIN:
+            return price
+    return None
+
+
+def _is_pixel_price_line(line: str) -> bool:
+    if _PIXEL_EXCLUDE.search(line):
+        return False
+    if not _PIXEL_MODEL_RE.search(line):
+        return False
+    return _extract_pixel_price(line) is not None
+
+
+def _classify_pixel_line(line: str) -> str | None:
+    if not _is_pixel_price_line(line):
+        return None
+    if re.search(r"\bPixel\b|Google\s+Pixel", line, re.IGNORECASE):
+        return "pixel"
+    return "oneplus"
+
+
+def _detect_pixel_categories(text: str) -> list[str]:
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_pixel_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
+
+
+def _split_pixel_by_category(text: str) -> dict[str, str]:
+    lines_by_cat: dict[str, list] = {k: [] for k in PIXEL_CATEGORIES}
+    for line in text.split("\n"):
+        cat = _classify_pixel_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            result[cat] = "\n".join(lines).strip()
+    return result
+
+
+def _add_markup_to_pixel_prices(text: str) -> str:
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if not _is_pixel_price_line(line):
+            result.append(line)
+            continue
+
+        def _replace(m):
+            if m.group(1) is not None:
+                price = int(m.group(1)) * 1000 + int(m.group(2))
+                new_price = price + PIXEL_MARKUP
+                return m.group(0).replace(
+                    m.group(1) + "." + m.group(2),
+                    f"{new_price // 1000}.{new_price % 1000:03d}"
+                )
+            elif m.group(3) is not None:
+                price = int(m.group(3))
+                new_price = price + PIXEL_MARKUP
+                return m.group(0).replace(m.group(3), str(new_price))
+            elif m.group(4) is not None:
+                price = int(m.group(4)) * 1000 + int(m.group(5))
+                new_price = price + PIXEL_MARKUP
+                return m.group(0).replace(
+                    m.group(4) + "." + m.group(5),
+                    f"{new_price // 1000}.{new_price % 1000:03d}"
+                )
+            elif m.group(6) is not None:
+                price = int(m.group(6))
+                new_price = price + PIXEL_MARKUP
+                return m.group(0).replace(m.group(6), str(new_price))
+            return m.group(0)
+
+        line = _PIXEL_PRICE_RE.sub(_replace, line)
+        line = line.rstrip("* ")
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_pixel_cache() -> dict:
+    if os.path.exists(PIXEL_CACHE_FILE):
+        with open(PIXEL_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_pixel_cache(cache: dict):
+    with open(PIXEL_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -955,6 +1095,58 @@ async def cb_new_type_samsung(call: CallbackQuery):
         await call.message.edit_text(chunks[0], parse_mode="HTML", reply_markup=kb.samsung_back_kb())
         for chunk in chunks[1:]:
             await call.message.answer(chunk, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
+
+
+@router.callback_query(F.data == "new_type:pixel")
+async def cb_new_type_pixel(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cache = _load_pixel_cache()
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not cache:
+        if is_admin:
+            await call.answer("⚠️ Цены Pixel/OnePlus не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    lines = ["📱 <b>Pixel / OnePlus — актуальные цены</b>\n"]
+    for cat_key, cat_name in PIXEL_CATEGORIES.items():
+        entry = cache.get(cat_key)
+        if not entry:
+            continue
+        updated = entry.get("updated_at", "—")
+        msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else [])
+        if not msgs:
+            continue
+        lines.append(f"<b>{cat_name}</b>  🕐 {updated}\n{msgs[0]}\n")
+
+    if len(lines) == 1:
+        if is_admin:
+            await call.answer("⚠️ Цены Pixel/OnePlus не загружены.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    disclaimer = "⚠️ Цены актуальны на момент последнего обновления. Для уточнения пишите @idistoreman\n\n"
+    full_text = disclaimer + "\n".join(lines)
+
+    if len(full_text) <= 4096:
+        await call.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.pixel_back_kb())
+    else:
+        chunks = []
+        current = disclaimer
+        for chunk in lines[1:]:
+            if len(current) + len(chunk) > 4000:
+                chunks.append(current)
+                current = chunk
+            else:
+                current += "\n" + chunk
+        if current:
+            chunks.append(current)
+        await call.message.edit_text(chunks[0], parse_mode="HTML", reply_markup=kb.pixel_back_kb())
+        for chunk in chunks[1:]:
+            await call.message.answer(chunk, parse_mode="HTML", reply_markup=kb.pixel_back_kb())
 
 
 @router.callback_query(F.data == "new_type:back")
@@ -2776,6 +2968,20 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
         _save_samsung_cache(cache)
         if not silent:
             names = ", ".join(SAMSUNG_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif _detect_pixel_categories(text):
+        split = _split_pixel_by_category(text)
+        cache = _load_pixel_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_pixel_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                cache[cat] = {"msgs": msgs, "updated_at": _now_msk()}
+        _save_pixel_cache(cache)
+        if not silent:
+            names = ", ".join(PIXEL_CATEGORIES[c] for c in split if split[c].strip())
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
