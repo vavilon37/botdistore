@@ -3190,6 +3190,22 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
+    elif _detect_watch_categories(text):
+        split = _split_watch_by_category(text)
+        cache = _load_watch_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_watch_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                existing = cache.get(cat, {})
+                old_msgs = existing.get("msgs", [])
+                cache[cat] = {"msgs": old_msgs + msgs, "updated_at": _now_msk()}
+        _save_watch_cache(cache)
+        if not silent:
+            names = ", ".join(WATCH_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
     elif _detect_samsung_categories(text):
         split = _split_samsung_by_category(text)
         cache = _load_samsung_cache()
@@ -3215,22 +3231,6 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
         _save_pixel_cache(cache)
         if not silent:
             names = ", ".join(PIXEL_CATEGORIES[c] for c in split if split[c].strip())
-            for aid in admin_ids:
-                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
-
-    elif _detect_watch_categories(text):
-        split = _split_watch_by_category(text)
-        cache = _load_watch_cache()
-        for cat, cat_text in split.items():
-            if cat_text.strip():
-                msgs = [_add_markup_to_watch_prices(cat_text)]
-                msgs = [m for m in msgs if m.strip()]
-                existing = cache.get(cat, {})
-                old_msgs = existing.get("msgs", [])
-                cache[cat] = {"msgs": old_msgs + msgs, "updated_at": _now_msk()}
-        _save_watch_cache(cache)
-        if not silent:
-            names = ", ".join(WATCH_CATEGORIES[c] for c in split if split[c].strip())
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
