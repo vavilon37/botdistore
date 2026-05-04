@@ -39,6 +39,10 @@ TRACKED_POSTS = [
     "BigSaleApple/11198",
     # Pixel / OnePlus
     "BigSaleApple/11196",
+    # Apple Watch
+    "BigSaleApple/12119",
+    "BigSaleApple/12149",
+    "BigSaleApple/12150",
 ]
 
 HEADERS = {
@@ -122,6 +126,7 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
         from handlers import (
             _save_cache, _save_mac_cache, _save_hp_cache,
             _save_tablets_cache, _save_samsung_cache, _save_pixel_cache,
+            _save_watch_cache,
         )
         _save_cache({})
         _save_mac_cache({})
@@ -129,6 +134,7 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
         _save_tablets_cache({})
         _save_samsung_cache({})
         _save_pixel_cache({})
+        _save_watch_cache({})
 
     async with aiohttp.ClientSession() as session:
         tasks = [_fetch_post_text(session, p) for p in TRACKED_POSTS]

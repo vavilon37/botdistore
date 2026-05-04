@@ -263,11 +263,34 @@ def preview_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def headphones_section_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎧 Наушники", callback_data="hp_section:headphones")],
+        [InlineKeyboardButton(text="⌚ Apple Watch", callback_data="hp_section:watch")],
+    ])
+
+
 def headphones_type_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎵 AirPods", callback_data="hp_cat:airpods")],
         [InlineKeyboardButton(text="🎧 AirPods Pro", callback_data="hp_cat:airpods_pro")],
         [InlineKeyboardButton(text="🎼 AirPods Max", callback_data="hp_cat:airpods_max")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="hp_section:back")],
+    ])
+
+
+def watch_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⌚ Apple Watch Series", callback_data="watch_cat:watch_s")],
+        [InlineKeyboardButton(text="⌚ Apple Watch SE", callback_data="watch_cat:watch_se")],
+        [InlineKeyboardButton(text="⌚ Apple Watch Ultra", callback_data="watch_cat:watch_ultra")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="hp_section:back")],
+    ])
+
+
+def watch_back_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад к часам", callback_data="watch_cat:back")],
     ])
 
 

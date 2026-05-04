@@ -910,6 +910,154 @@ def _save_pixel_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+# ══════════════════════════════════════════════════════
+#  APPLE WATCH
+# ══════════════════════════════════════════════════════
+
+WATCH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "watch_cache.json")
+WATCH_MARKUP = 2000
+
+WATCH_CATEGORIES = {
+    "watch_s": "Apple Watch Series (S8/S9/S10/S11)",
+    "watch_se": "Apple Watch SE",
+    "watch_ultra": "Apple Watch Ultra",
+}
+
+_WATCH_EXCLUDE = re.compile(
+    r"мятые|мятый|мятая|без\s*зарядки|актив|предактив|распакован|ASIS|ACTIVE"
+    r"|уцен|замена|б/у|БУ\b|used|refurb|витрин|царап|скол|трещ",
+    re.IGNORECASE
+)
+
+# Цена: NN.NNN или NNNNN, после дефиса или в конце строки
+_WATCH_PRICE_RE = re.compile(
+    r"[-—]\s*(\d{2,3})[.](\d{3})\b"    # -72.500
+    r"|[-—]\s*(\d{4,6})\b"             # -25000
+    r"|(?<!\d)(\d{2,3})[.](\d{3})\b"   # 72.500 без дефиса
+    r"|(?<!\d)(\d{4,6})\b(?!\d)"        # 25000 без дефиса
+)
+
+_WATCH_PRICE_MIN = 10000
+
+# Ключевые слова для распознавания строк часов
+_WATCH_LINE_RE = re.compile(
+    r"\bS\d{1,2}\b.*\d{2}mm|\bS\d{1,2}\b.*\d{2,3}\s*(?:Ti|mm)|"
+    r"Watch\s+S\d{1,2}|Watch\s+SE|Watch\s+Ultra|"
+    r"\bSE\s+\d{2}\b|\bUltra\s+[23]\b|\bUltra\s+\d{2}\b|"
+    r"\bS(?:8|9|10|11)\b"
+    r"|\b(?:8|9)\s+\d{2}\s+(?:Stainless|Steel|Titanium|Sport|Milanese|Loop|Case)",
+    re.IGNORECASE
+)
+
+
+def _extract_watch_price(line: str) -> int | None:
+    for m in _WATCH_PRICE_RE.finditer(line):
+        if m.group(1) is not None:
+            price = int(m.group(1)) * 1000 + int(m.group(2))
+        elif m.group(3) is not None:
+            price = int(m.group(3))
+        elif m.group(4) is not None:
+            price = int(m.group(4)) * 1000 + int(m.group(5))
+        elif m.group(6) is not None:
+            price = int(m.group(6))
+        else:
+            continue
+        if price >= _WATCH_PRICE_MIN:
+            return price
+    return None
+
+
+def _is_watch_price_line(line: str) -> bool:
+    if _WATCH_EXCLUDE.search(line):
+        return False
+    if not _WATCH_LINE_RE.search(line):
+        return False
+    return _extract_watch_price(line) is not None
+
+
+def _classify_watch_line(line: str) -> str | None:
+    if not _is_watch_price_line(line):
+        return None
+    if re.search(r"\bUltra\b", line, re.IGNORECASE):
+        return "watch_ultra"
+    if re.search(r"\bSE\b", line, re.IGNORECASE):
+        return "watch_se"
+    return "watch_s"
+
+
+def _detect_watch_categories(text: str) -> list[str]:
+    found = set()
+    for line in text.split("\n"):
+        cat = _classify_watch_line(line)
+        if cat:
+            found.add(cat)
+    return list(found)
+
+
+def _split_watch_by_category(text: str) -> dict[str, str]:
+    lines_by_cat: dict[str, list] = {k: [] for k in WATCH_CATEGORIES}
+    for line in text.split("\n"):
+        cat = _classify_watch_line(line)
+        if cat:
+            lines_by_cat[cat].append(line)
+    result = {}
+    for cat, lines in lines_by_cat.items():
+        if lines:
+            result[cat] = "\n".join(lines).strip()
+    return result
+
+
+def _add_markup_to_watch_prices(text: str) -> str:
+    lines = text.split("\n")
+    result = []
+    for line in lines:
+        if not _is_watch_price_line(line):
+            result.append(line)
+            continue
+
+        def _replace(m):
+            if m.group(1) is not None:
+                price = int(m.group(1)) * 1000 + int(m.group(2))
+                new_price = price + WATCH_MARKUP
+                return m.group(0).replace(
+                    m.group(1) + "." + m.group(2),
+                    f"{new_price // 1000}.{new_price % 1000:03d}"
+                )
+            elif m.group(3) is not None:
+                price = int(m.group(3))
+                new_price = price + WATCH_MARKUP
+                return m.group(0).replace(m.group(3), str(new_price))
+            elif m.group(4) is not None:
+                price = int(m.group(4)) * 1000 + int(m.group(5))
+                new_price = price + WATCH_MARKUP
+                return m.group(0).replace(
+                    m.group(4) + "." + m.group(5),
+                    f"{new_price // 1000}.{new_price % 1000:03d}"
+                )
+            elif m.group(6) is not None:
+                price = int(m.group(6))
+                new_price = price + WATCH_MARKUP
+                return m.group(0).replace(m.group(6), str(new_price))
+            return m.group(0)
+
+        line = _WATCH_PRICE_RE.sub(_replace, line)
+        line = line.replace("*", "").strip()
+        result.append(line)
+    return "\n".join(result)
+
+
+def _load_watch_cache() -> dict:
+    if os.path.exists(WATCH_CACHE_FILE):
+        with open(WATCH_CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def _save_watch_cache(cache: dict):
+    with open(WATCH_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
 def _filter_iphone_lines(text: str) -> str:
     """Оставляет только строки с ценами на iPhone + пояснения."""
     lines = text.split("\n")
@@ -1236,9 +1384,88 @@ async def cmd_smartphones_bu(message: Message):
 @router.message(F.text == "🎧 Наушники")
 async def cmd_headphones(message: Message):
     await message.answer(
+        "🎧 Наушники / ⌚ Часы — выберите раздел:",
+        reply_markup=kb.headphones_section_kb()
+    )
+
+
+@router.callback_query(F.data == "hp_section:headphones")
+async def cb_hp_section_headphones(call: CallbackQuery):
+    await call.message.edit_text(
         "🎧 Наушники Apple — выберите категорию:",
         reply_markup=kb.headphones_type_kb()
     )
+
+
+@router.callback_query(F.data == "hp_section:back")
+async def cb_hp_section_back(call: CallbackQuery):
+    await call.message.edit_text(
+        "🎧 Наушники / ⌚ Часы — выберите раздел:",
+        reply_markup=kb.headphones_section_kb()
+    )
+
+
+@router.callback_query(F.data == "hp_section:watch")
+async def cb_hp_section_watch(call: CallbackQuery):
+    await call.message.edit_text(
+        "⌚ Apple Watch — выберите категорию:",
+        reply_markup=kb.watch_type_kb()
+    )
+
+
+@router.callback_query(F.data.startswith("watch_cat:"))
+async def cb_watch_category(call: CallbackQuery):
+    from bot import ADMIN_IDS
+    cat_key = call.data.split(":")[1]
+    if cat_key == "back":
+        await call.message.edit_text(
+            "⌚ Apple Watch — выберите категорию:",
+            reply_markup=kb.watch_type_kb()
+        )
+        return
+
+    cat_name = WATCH_CATEGORIES.get(cat_key, cat_key)
+    cache = _load_watch_cache()
+    entry = cache.get(cat_key)
+    is_admin = call.from_user.id in ADMIN_IDS
+
+    if not entry:
+        if is_admin:
+            await call.answer(f"⚠️ Цены {cat_name} не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
+        else:
+            await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    updated = entry.get("updated_at", "—")
+    disclaimer = (
+        f"⚠️ Цены актуальны на момент последнего обновления. "
+        f"Для уточнения пишите @idistoreman\n\n"
+        f"⌚ <b>{cat_name}</b>  🕐 {updated}\n\n"
+    )
+    msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
+    if not msgs:
+        await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
+        return
+
+    price_blocks = []
+    for msg_text in msgs:
+        if msg_text.strip():
+            price_blocks.append(msg_text.strip())
+
+    for i, block in enumerate(price_blocks):
+        body = (disclaimer if i == 0 else "") + block
+        is_last = (i == len(price_blocks) - 1)
+        if i == 0 and is_last:
+            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.watch_back_kb())
+        elif i == 0:
+            await call.message.edit_text(body, parse_mode="HTML")
+        elif is_last:
+            await call.message.answer(body, parse_mode="HTML", reply_markup=kb.watch_back_kb())
+        else:
+            await call.message.answer(body, parse_mode="HTML")
+
+    if not price_blocks:
+        await call.message.answer("◀️", reply_markup=kb.watch_back_kb())
 
 
 @router.callback_query(F.data.startswith("hp_cat:"))
@@ -1249,6 +1476,12 @@ async def cb_hp_category(call: CallbackQuery):
         await call.message.edit_text(
             "🎧 Наушники Apple — выберите категорию:",
             reply_markup=kb.headphones_type_kb()
+        )
+        return
+    if cat_key == "section_back":
+        await call.message.edit_text(
+            "🎧 Наушники / ⌚ Часы — выберите раздел:",
+            reply_markup=kb.headphones_section_kb()
         )
         return
 
@@ -2982,6 +3215,22 @@ async def process_price_text(bot, admin_ids: set, text: str, silent: bool = Fals
         _save_pixel_cache(cache)
         if not silent:
             names = ", ".join(PIXEL_CATEGORIES[c] for c in split if split[c].strip())
+            for aid in admin_ids:
+                await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
+
+    elif _detect_watch_categories(text):
+        split = _split_watch_by_category(text)
+        cache = _load_watch_cache()
+        for cat, cat_text in split.items():
+            if cat_text.strip():
+                msgs = [_add_markup_to_watch_prices(cat_text)]
+                msgs = [m for m in msgs if m.strip()]
+                existing = cache.get(cat, {})
+                old_msgs = existing.get("msgs", [])
+                cache[cat] = {"msgs": old_msgs + msgs, "updated_at": _now_msk()}
+        _save_watch_cache(cache)
+        if not silent:
+            names = ", ".join(WATCH_CATEGORIES[c] for c in split if split[c].strip())
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
