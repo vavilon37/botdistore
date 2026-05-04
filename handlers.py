@@ -1381,7 +1381,7 @@ async def cmd_smartphones_bu(message: Message):
 
 
 
-@router.message(F.text == "🎧 Наушники")
+@router.message(F.text == "🎧 Аксессуары Apple")
 async def cmd_headphones(message: Message):
     await message.answer(
         "🎧 Наушники / ⌚ Часы — выберите раздел:",
