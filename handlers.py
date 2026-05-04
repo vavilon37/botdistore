@@ -141,7 +141,7 @@ def _split_by_series(text: str, series_list: list[str]) -> dict[str, str]:
 _EXCLUDE_LINE_PATTERNS = re.compile(
     r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
     r"|уцен|замена|дисплей|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
-    r"|состояние|б/у|БУ\b|used|refurb|витрин|мятая\s*коробка",
+    r"|состояние|б/у|БУ\b|used|refurb|витрин|мятая\s*коробка|без\s*зарядки",
     re.IGNORECASE
 )
 
@@ -181,7 +181,7 @@ HP_PARTS_MARKUP = 1000
 _HP_EXCLUDE = re.compile(
     r"актив|предактив|распакован|раскрыта\s*упаковка|ASIS|ACTIVE"
     r"|уцен|замена|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
-    r"|состояние|б/у|БУ\b|used|refurb|витрин"
+    r"|состояние|б/у|БУ\b|used|refurb|витрин|без\s*зарядки"
     r"|EarPods",  # EarPods — не AirPods, не нужны
     re.IGNORECASE
 )
@@ -287,7 +287,7 @@ MAC_CATEGORIES = {
 }
 
 _MAC_EXCLUDE = re.compile(
-    r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин",
+    r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин|без\s*зарядки",
     re.IGNORECASE
 )
 
@@ -469,7 +469,7 @@ TABLET_CATEGORIES = {
 
 _TABLET_EXCLUDE = re.compile(
     r"актив|предактив|распакован|ASIS|ACTIVE|уцен|замена|б/у|БУ\b|used|refurb|витрин"
-    r"|вмятина|царап|скол|трещ",
+    r"|вмятина|царап|скол|трещ|без\s*зарядки",
     re.IGNORECASE
 )
 
@@ -644,7 +644,7 @@ SAMSUNG_CATEGORIES = {
 _SAMSUNG_EXCLUDE = re.compile(
     r"актив|предактив|распакован|распак|раскрыта\s*упаковка|ASIS|ACTIVE"
     r"|уцен|замена|АКБ|батаре|царап|скол|трещ|корпус|ремонт"
-    r"|состояние|б/у|БУ\b|used|refurb|витрин",
+    r"|состояние|б/у|БУ\b|used|refurb|витрин|без\s*зарядки",
     re.IGNORECASE
 )
 
