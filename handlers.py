@@ -1407,10 +1407,13 @@ async def cb_hp_section_back(call: CallbackQuery):
 
 @router.callback_query(F.data == "hp_section:watch")
 async def cb_hp_section_watch(call: CallbackQuery):
-    await call.message.edit_text(
-        "⌚ Apple Watch — выберите категорию:",
-        reply_markup=kb.watch_type_kb()
-    )
+    try:
+        await call.message.edit_text(
+            "⌚ Apple Watch — выберите категорию:",
+            reply_markup=kb.watch_type_kb()
+        )
+    except TelegramBadRequest:
+        await call.answer()
 
 
 @router.callback_query(F.data.startswith("watch_cat:"))
@@ -1418,10 +1421,13 @@ async def cb_watch_category(call: CallbackQuery):
     from bot import ADMIN_IDS
     cat_key = call.data.split(":")[1]
     if cat_key == "back":
-        await call.message.edit_text(
-            "⌚ Apple Watch — выберите категорию:",
-            reply_markup=kb.watch_type_kb()
-        )
+        try:
+            await call.message.edit_text(
+                "⌚ Apple Watch — выберите категорию:",
+                reply_markup=kb.watch_type_kb()
+            )
+        except TelegramBadRequest:
+            await call.answer()
         return
 
     cat_name = WATCH_CATEGORIES.get(cat_key, cat_key)
