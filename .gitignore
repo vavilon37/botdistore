@@ -14,3 +14,7 @@ samsung_cache.json
 pixel_cache.json
 watch_cache.json
 monitor_state.json
+
+# Локальные файлы сессий Telethon
+*.session
+*.session-journal

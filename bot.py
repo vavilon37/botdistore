@@ -12,6 +12,7 @@ import keyboards as kb
 from handlers import router as user_router, process_price_text
 from admin import router as admin_router
 from price_monitor import check_and_process, CHECK_INTERVAL, TRACKED_POSTS
+import channel_source
 
 load_dotenv()
 
@@ -65,8 +66,10 @@ async def main():
             reply_markup=menu
         )
 
+    async def silent_process(b, a, t):
+        return await process_price_text(b, a, t, silent=True)
+
     async def monitor_loop():
-        silent_process = lambda b, a, t: process_price_text(b, a, t, silent=True)
         # Первый прогон — сразу force: после пересборки контейнера кэши пустые,
         # и без этого раздел цен простоял бы весь CHECK_INTERVAL.
         first = True
@@ -101,13 +104,55 @@ async def main():
                 except Exception:
                     pass
 
+    async def channel_listener():
+        """Мгновенная реакция на публикацию и правку постов в канале."""
+        channels = sorted({p.split("/")[0] for p in TRACKED_POSTS})
+        pending: asyncio.Task | None = None
+
+        async def resync():
+            # Альбом прилетает несколькими событиями подряд, а правки идут
+            # пачками — ждём паузы, чтобы не гонять синхронизацию по разу
+            # на каждое сообщение.
+            await asyncio.sleep(20)
+            try:
+                stats = await check_and_process(
+                    bot, ADMIN_IDS, silent_process, force=True
+                )
+                logger.info("Пересинхронизация после правки: %s", stats)
+            except Exception:
+                logger.exception("Пересинхронизация не удалась")
+
+        async def on_text(_text: str):
+            nonlocal pending
+            if pending and not pending.done():
+                pending.cancel()
+            pending = asyncio.create_task(resync())
+
+        while True:
+            try:
+                await channel_source.listen(channels, on_text)
+                logger.warning("Соединение с каналом закрыто, переподключаемся")
+            except Exception:
+                logger.exception("Слушатель канала упал, повтор через минуту")
+            await asyncio.sleep(60)
+
     monitor_task = asyncio.create_task(monitor_loop())
+    listener_task = None
+    if channel_source.is_configured():
+        listener_task = asyncio.create_task(channel_listener())
+    else:
+        logger.info(
+            "Клиент канала не настроен (TG_API_ID / TG_API_HASH / TG_SESSION) — "
+            "работаем только по часовому опросу"
+        )
 
     logger.info("Бот запущен, постов в мониторинге: %d", len(TRACKED_POSTS))
     try:
         await dp.start_polling(bot)
     finally:
         monitor_task.cancel()
+        if listener_task:
+            listener_task.cancel()
         await bot.session.close()
 
 

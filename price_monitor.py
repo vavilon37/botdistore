@@ -7,6 +7,8 @@ from pathlib import Path
 import aiohttp
 from bs4 import BeautifulSoup
 
+import channel_source
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(__file__))
@@ -143,36 +145,16 @@ async def _fetch_via_feed(
             return _html_to_text(text_elem).strip()
         logger.warning(f"{channel}/{post_id}: карточка в ленте есть, текста внутри нет")
 
-    # Альбом: несколько фото склеиваются в одну карточку, её data-post
-    # не совпадает с ID из ссылки. Берём ближайшую карточку с текстом.
-    target = int(post_id)
-    candidates = []
-    for div in soup.find_all("div", attrs={"data-post": True}):
-        raw = div.get("data-post", "").split("/")[-1]
-        if not raw.isdigit():
-            continue
-        elem = div.find("div", class_="tgme_widget_message_text")
-        if elem:
-            candidates.append((abs(int(raw) - target), raw, elem))
-
-    if not candidates:
-        logger.warning(f"{channel}/{post_id}: в ленте вообще нет карточек с текстом")
-        return None
-
-    distance, found_id, elem = min(candidates, key=lambda c: c[0])
-    if distance > 5:
-        ids = sorted(c[1] for c in candidates)
-        logger.warning(
-            f"{channel}/{post_id}: подходящей карточки нет, ближайшая {found_id}. "
-            f"Всего в ленте: {ids[-8:]}"
-        )
-        return None
-
-    if distance:
-        logger.info(
-            f"{channel}/{post_id}: похоже на альбом, текст взят из карточки {found_id}"
-        )
-    return _html_to_text(elem).strip()
+    # Раньше здесь был подбор ближайшей карточки для альбомов. Убрано:
+    # при защищённом канале он молча подставлял текст чужого поста.
+    ids = sorted(
+        d.get("data-post", "").split("/")[-1]
+        for d in soup.find_all("div", attrs={"data-post": True})
+    )
+    logger.warning(
+        f"{channel}/{post_id}: текста нет в ленте. Доступны: {ids[-8:]}"
+    )
+    return None
 
 
 async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> str | None:
@@ -225,9 +207,20 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
         for snapshot, _, save_fn in backup.values():
             save_fn({})
 
-    async with aiohttp.ClientSession() as session:
-        tasks = [_fetch_post_text(session, p) for p in TRACKED_POSTS]
-        results = await asyncio.gather(*tasks)
+    if channel_source.is_configured():
+        try:
+            texts = await channel_source.fetch_texts(TRACKED_POSTS)
+            results = [texts.get(p) for p in TRACKED_POSTS]
+        except Exception as e:
+            logger.error(f"Клиент канала недоступен ({e}), пробуем веб-парсер")
+            results = None
+    else:
+        results = None
+
+    if results is None:
+        async with aiohttp.ClientSession() as session:
+            tasks = [_fetch_post_text(session, p) for p in TRACKED_POSTS]
+            results = await asyncio.gather(*tasks)
 
     for post_path, text in zip(TRACKED_POSTS, results):
         if text is None:
