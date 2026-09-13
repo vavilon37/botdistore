@@ -28,6 +28,9 @@ SESSION = os.getenv("TG_SESSION", "").strip()
 
 _client = None
 
+# Насколько далеко искать подпись альбома от указанного сообщения
+ALBUM_SPAN = 10
+
 
 def is_configured() -> bool:
     return bool(API_ID and API_HASH and SESSION)
@@ -57,6 +60,32 @@ async def get_client():
     return _client
 
 
+async def _caption_of_album(client, channel: str, msg_id: int, group_id: int) -> str:
+    """Подпись альбома. В группе фото текст лежит ровно на одном сообщении,
+    у остальных поле пустое — ищем его среди соседей по grouped_id.
+
+    Сверка идёт по самому grouped_id, а не по близости номеров: подпись
+    соседнего, но чужого поста подставить нельзя.
+    """
+    span = range(max(msg_id - ALBUM_SPAN, 1), msg_id + ALBUM_SPAN + 1)
+    try:
+        neighbours = await client.get_messages(channel, ids=list(span))
+    except Exception as e:
+        logger.error("Не удалось дочитать альбом %s/%s: %s", channel, msg_id, e)
+        return ""
+
+    for n in neighbours:
+        if n is None or getattr(n, "grouped_id", None) != group_id:
+            continue
+        text = (getattr(n, "message", "") or "").strip()
+        if text:
+            logger.info(
+                "%s/%s: альбом, подпись взята из сообщения %s", channel, msg_id, n.id
+            )
+            return text
+    return ""
+
+
 async def fetch_texts(post_paths: list[str]) -> dict[str, str]:
     """Тексты постов по списку «канал/id». Пропущенные просто отсутствуют."""
     client = await get_client()
@@ -67,18 +96,48 @@ async def fetch_texts(post_paths: list[str]) -> dict[str, str]:
         by_channel.setdefault(channel, []).append(int(msg_id))
 
     out: dict[str, str] = {}
+    # Если несколько запрошенных ID оказались членами одного альбома, подпись
+    # у них общая. Отдаём её один раз, иначе одни и те же цены лягут в кэш
+    # столько раз, сколько членов альбома попало в список.
+    seen_albums: set[tuple[str, int]] = set()
+
     for channel, ids in by_channel.items():
         try:
             messages = await client.get_messages(channel, ids=ids)
         except Exception as e:
             logger.error("Не удалось прочитать %s: %s", channel, e)
             continue
+
         for msg_id, msg in zip(ids, messages):
-            text = (getattr(msg, "message", "") or "").strip() if msg else ""
+            if msg is None:
+                logger.warning("%s/%s: сообщение удалено или недоступно", channel, msg_id)
+                continue
+
+            text = (getattr(msg, "message", "") or "").strip()
             if text:
                 out[f"{channel}/{msg_id}"] = text
+                continue
+
+            group_id = getattr(msg, "grouped_id", None)
+            if not group_id:
+                logger.warning("%s/%s: пост без текста", channel, msg_id)
+                continue
+
+            if (channel, group_id) in seen_albums:
+                logger.info(
+                    "%s/%s: тот же альбом, что и предыдущий пост — пропускаем",
+                    channel, msg_id,
+                )
+                continue
+
+            text = await _caption_of_album(client, channel, msg_id, group_id)
+            if text:
+                seen_albums.add((channel, group_id))
+                out[f"{channel}/{msg_id}"] = text
             else:
-                logger.warning("%s/%s: пост пуст или удалён", channel, msg_id)
+                logger.warning(
+                    "%s/%s: альбом без подписи (группа %s)", channel, msg_id, group_id
+                )
 
     logger.info("Прочитано постов: %d из %d", len(out), len(post_paths))
     return out

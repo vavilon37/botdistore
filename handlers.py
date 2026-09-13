@@ -1193,7 +1193,7 @@ user_filters: dict = {}
 
 async def safe_edit(call: CallbackQuery, text: str, **kwargs):
     try:
-        await call.message.edit_text(text, **kwargs)
+        await safe_edit(call, text, **kwargs)
     except TelegramBadRequest:
         await call.answer()
 
@@ -1264,7 +1264,7 @@ async def cmd_smartphones_new(message: Message):
 
 @router.callback_query(F.data == "new_type:iphone")
 async def cb_new_type_iphone(call: CallbackQuery):
-    await call.message.edit_text(
+    await safe_edit(call, 
         "🍎 iPhone — выберите серию:",
         reply_markup=kb.iphone_series_kb()
     )
@@ -1306,7 +1306,7 @@ async def cb_new_type_samsung(call: CallbackQuery):
 
     # Разбиваем на части если текст слишком длинный
     if len(full_text) <= 4096:
-        await call.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
+        await safe_edit(call, full_text, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
     else:
         chunks = []
         current = disclaimer
@@ -1318,7 +1318,7 @@ async def cb_new_type_samsung(call: CallbackQuery):
                 current += "\n" + chunk
         if current:
             chunks.append(current)
-        await call.message.edit_text(chunks[0], parse_mode="HTML", reply_markup=kb.samsung_back_kb())
+        await safe_edit(call, chunks[0], parse_mode="HTML", reply_markup=kb.samsung_back_kb())
         for chunk in chunks[1:]:
             await call.message.answer(chunk, parse_mode="HTML", reply_markup=kb.samsung_back_kb())
 
@@ -1358,7 +1358,7 @@ async def cb_new_type_pixel(call: CallbackQuery):
     full_text = disclaimer + "\n".join(lines)
 
     if len(full_text) <= 4096:
-        await call.message.edit_text(full_text, parse_mode="HTML", reply_markup=kb.pixel_back_kb())
+        await safe_edit(call, full_text, parse_mode="HTML", reply_markup=kb.pixel_back_kb())
     else:
         chunks = []
         current = disclaimer
@@ -1370,14 +1370,14 @@ async def cb_new_type_pixel(call: CallbackQuery):
                 current += "\n" + chunk
         if current:
             chunks.append(current)
-        await call.message.edit_text(chunks[0], parse_mode="HTML", reply_markup=kb.pixel_back_kb())
+        await safe_edit(call, chunks[0], parse_mode="HTML", reply_markup=kb.pixel_back_kb())
         for chunk in chunks[1:]:
             await call.message.answer(chunk, parse_mode="HTML", reply_markup=kb.pixel_back_kb())
 
 
 @router.callback_query(F.data == "new_type:back")
 async def cb_new_type_back(call: CallbackQuery):
-    await call.message.edit_text(
+    await safe_edit(call, 
         "📱 Смартфоны New — выберите категорию:",
         reply_markup=kb.new_smartphones_type_kb()
     )
@@ -1440,9 +1440,9 @@ async def cb_new_series(call: CallbackQuery):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
         if i == 0 and is_last_block and not footnote_combined:
-            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
+            await safe_edit(call, body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
         elif i == 0:
-            await call.message.edit_text(body, parse_mode="HTML")
+            await safe_edit(call, body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.new_series_back_kb())
         else:
@@ -1474,7 +1474,7 @@ async def cmd_headphones(message: Message):
 
 @router.callback_query(F.data == "hp_section:headphones")
 async def cb_hp_section_headphones(call: CallbackQuery):
-    await call.message.edit_text(
+    await safe_edit(call, 
         "🎧 Наушники Apple — выберите категорию:",
         reply_markup=kb.headphones_type_kb()
     )
@@ -1482,7 +1482,7 @@ async def cb_hp_section_headphones(call: CallbackQuery):
 
 @router.callback_query(F.data == "hp_section:back")
 async def cb_hp_section_back(call: CallbackQuery):
-    await call.message.edit_text(
+    await safe_edit(call, 
         "🎧 Наушники / ⌚ Часы — выберите раздел:",
         reply_markup=kb.headphones_section_kb()
     )
@@ -1491,7 +1491,7 @@ async def cb_hp_section_back(call: CallbackQuery):
 @router.callback_query(F.data == "hp_section:watch")
 async def cb_hp_section_watch(call: CallbackQuery):
     try:
-        await call.message.edit_text(
+        await safe_edit(call, 
             "⌚ Apple Watch — выберите категорию:",
             reply_markup=kb.watch_type_kb()
         )
@@ -1505,7 +1505,7 @@ async def cb_watch_category(call: CallbackQuery):
     cat_key = call.data.split(":")[1]
     if cat_key == "back":
         try:
-            await call.message.edit_text(
+            await safe_edit(call, 
                 "⌚ Apple Watch — выберите категорию:",
                 reply_markup=kb.watch_type_kb()
             )
@@ -1545,9 +1545,9 @@ async def cb_watch_category(call: CallbackQuery):
         body = (disclaimer if i == 0 else "") + block
         is_last = (i == len(price_blocks) - 1)
         if i == 0 and is_last:
-            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.watch_back_kb())
+            await safe_edit(call, body, parse_mode="HTML", reply_markup=kb.watch_back_kb())
         elif i == 0:
-            await call.message.edit_text(body, parse_mode="HTML")
+            await safe_edit(call, body, parse_mode="HTML")
         elif is_last:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.watch_back_kb())
         else:
@@ -1562,13 +1562,13 @@ async def cb_hp_category(call: CallbackQuery):
     from bot import ADMIN_IDS
     cat_key = call.data.split(":")[1]
     if cat_key == "back":
-        await call.message.edit_text(
+        await safe_edit(call, 
             "🎧 Наушники Apple — выберите категорию:",
             reply_markup=kb.headphones_type_kb()
         )
         return
     if cat_key == "section_back":
-        await call.message.edit_text(
+        await safe_edit(call, 
             "🎧 Наушники / ⌚ Часы — выберите раздел:",
             reply_markup=kb.headphones_section_kb()
         )
@@ -1622,9 +1622,9 @@ async def cb_hp_category(call: CallbackQuery):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
         if i == 0 and is_last_block and not footnote_combined:
-            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
+            await safe_edit(call, body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
         elif i == 0:
-            await call.message.edit_text(body, parse_mode="HTML")
+            await safe_edit(call, body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.hp_back_kb())
         else:
@@ -2972,10 +2972,10 @@ async def cmd_tablets_menu(message: Message):
 async def cb_tablet_brand(call: CallbackQuery):
     brand = call.data.split(":")[1]
     if brand == "back":
-        await call.message.edit_text("📟 Планшеты — выберите бренд:", reply_markup=kb.tablets_brand_kb())
+        await safe_edit(call, "📟 Планшеты — выберите бренд:", reply_markup=kb.tablets_brand_kb())
         return
     if brand == "apple":
-        await call.message.edit_text("🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
+        await safe_edit(call, "🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
     else:
         await call.answer("Раздел в разработке", show_alert=True)
 
@@ -2985,7 +2985,7 @@ async def cb_tablet_category(call: CallbackQuery):
     from bot import ADMIN_IDS
     cat_key = call.data.split(":")[1]
     if cat_key == "back":
-        await call.message.edit_text("🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
+        await safe_edit(call, "🍎 Apple планшеты — выберите категорию:", reply_markup=kb.tablets_apple_kb())
         return
 
     cat_name = TABLET_CATEGORIES.get(cat_key, cat_key)
@@ -3033,9 +3033,9 @@ async def cb_tablet_category(call: CallbackQuery):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
         if i == 0 and is_last_block and not footnote_combined:
-            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
+            await safe_edit(call, body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
         elif i == 0:
-            await call.message.edit_text(body, parse_mode="HTML")
+            await safe_edit(call, body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.tablet_back_kb())
         else:
@@ -3151,7 +3151,7 @@ async def cb_mac_category(call: CallbackQuery):
     from bot import ADMIN_IDS
     cat_key = call.data.split(":")[1]
     if cat_key == "back":
-        await call.message.edit_text("🖥 Маки — выберите категорию:", reply_markup=kb.macs_type_kb())
+        await safe_edit(call, "🖥 Маки — выберите категорию:", reply_markup=kb.macs_type_kb())
         return
 
     cat_name = MAC_CATEGORIES.get(cat_key, cat_key)
@@ -3199,9 +3199,9 @@ async def cb_mac_category(call: CallbackQuery):
         body = (disclaimer if i == 0 else "") + block
         is_last_block = (i == len(price_blocks) - 1)
         if i == 0 and is_last_block and not footnote_combined:
-            await call.message.edit_text(body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
+            await safe_edit(call, body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
         elif i == 0:
-            await call.message.edit_text(body, parse_mode="HTML")
+            await safe_edit(call, body, parse_mode="HTML")
         elif is_last_block and not footnote_combined:
             await call.message.answer(body, parse_mode="HTML", reply_markup=kb.mac_back_kb())
         else:
@@ -3378,7 +3378,7 @@ async def cmd_buyout(message: Message, state: FSMContext):
 @router.callback_query(F.data == "buyout:start")
 async def buyout_start(call: CallbackQuery, state: FSMContext):
     await state.set_state(BuyoutState.model)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "📱 <b>Шаг 1 из 11 — Модель</b>\n\n"
         "Напишите модель вашего iPhone (например: <code>iPhone 13 Pro</code>):",
         parse_mode="HTML"
@@ -3402,7 +3402,7 @@ async def buyout_color(call: CallbackQuery, state: FSMContext):
     color = call.data.split(":", 1)[1]
     await state.update_data(color=color)
     await state.set_state(BuyoutState.storage)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "💾 <b>Шаг 3 из 11 — Объём памяти</b>\n\n"
         "Выберите объём памяти устройства:",
         parse_mode="HTML",
@@ -3416,7 +3416,7 @@ async def buyout_storage(call: CallbackQuery, state: FSMContext):
     await state.update_data(storage=storage)
     await state.set_state(BuyoutState.photos)
     await state.update_data(photos=[])
-    await call.message.edit_text(
+    await safe_edit(call, 
         "📸 <b>Шаг 4 из 11 — Фото</b>\n\n"
         "⚠️ <b>Важно:</b> отправьте минимум <b>3 фотографии</b> с разных ракурсов.\n\n"
         "Обязательно сфотографируйте:\n"
@@ -3455,7 +3455,7 @@ async def buyout_photos_done(call: CallbackQuery, state: FSMContext):
         await call.answer(f"Добавьте минимум 3 фото! Сейчас: {len(photos)}", show_alert=True)
         return
     await state.set_state(BuyoutState.condition)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "📊 <b>Шаг 5 из 11 — Общее состояние</b>\n\n"
         "Оцените общее состояние телефона по шкале от <b>1</b> до <b>10</b>:",
         parse_mode="HTML",
@@ -3468,7 +3468,7 @@ async def buyout_condition(call: CallbackQuery, state: FSMContext):
     score = call.data.split(":")[1]
     await state.update_data(condition=score)
     await state.set_state(BuyoutState.screen)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "🖥 <b>Шаг 6 из 11 — Состояние экрана</b>\n\n"
         "Оцените состояние экрана по шкале от <b>1</b> до <b>10</b>:",
         parse_mode="HTML",
@@ -3481,7 +3481,7 @@ async def buyout_screen(call: CallbackQuery, state: FSMContext):
     score = call.data.split(":")[1]
     await state.update_data(screen=score)
     await state.set_state(BuyoutState.body)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "📦 <b>Шаг 7 из 11 — Состояние корпуса</b>\n\n"
         "Оцените состояние корпуса по шкале от <b>1</b> до <b>10</b>:",
         parse_mode="HTML",
@@ -3494,7 +3494,7 @@ async def buyout_body(call: CallbackQuery, state: FSMContext):
     score = call.data.split(":")[1]
     await state.update_data(body=score)
     await state.set_state(BuyoutState.battery)
-    await call.message.edit_text(
+    await safe_edit(call, 
         "🔋 <b>Шаг 8 из 11 — Состояние АКБ</b>\n\n"
         "Введите уровень заряда аккумулятора в <b>процентах</b> (например: <code>87</code>):",
         parse_mode="HTML"
@@ -3525,7 +3525,7 @@ async def buyout_kit_toggle(call: CallbackQuery, state: FSMContext):
         data = await state.get_data()
         await state.set_state(BuyoutState.price)
         kit_text = ", ".join(data.get("kit", [])) or "Только телефон"
-        await call.message.edit_text(
+        await safe_edit(call, 
             f"✅ Комплект: {kit_text}\n\n"
             "💰 <b>Шаг 10 из 11 — Желаемая цена</b>\n\n"
             "Введите желаемую цену в рублях (только цифры):",
