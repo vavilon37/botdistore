@@ -93,26 +93,69 @@ def _html_to_text(elem) -> str:
     return "".join(result)
 
 
-async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> str | None:
-    channel, post_id_str = post_path.split("/")
-    post_id = int(post_id_str)
-    url = f"https://t.me/s/{channel}?before={post_id + 1}"
-    try:
-        async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-            if resp.status != 200:
-                return None
-            html = await resp.text()
-            soup = BeautifulSoup(html, "lxml")
-            post_wrap = soup.find("div", attrs={"data-post": f"{channel}/{post_id_str}"})
-            if not post_wrap:
-                return None
-            text_elem = post_wrap.find("div", class_="tgme_widget_message_text")
-            if text_elem:
-                return _html_to_text(text_elem).strip()
+async def _get(session: aiohttp.ClientSession, url: str) -> str | None:
+    async with session.get(
+        url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=20)
+    ) as resp:
+        if resp.status != 200:
+            logger.warning(f"{url} -> HTTP {resp.status}")
             return None
-    except Exception as e:
-        logger.error(f"Ошибка получения {post_path}: {e}")
+        return await resp.text()
+
+
+async def _fetch_via_embed(
+    session: aiohttp.ClientSession, channel: str, post_id: str
+) -> str | None:
+    """Одиночный виджет поста. В отличие от ленты понимает альбомы:
+    пост с несколькими фото отдаётся по своему прямому ID."""
+    html = await _get(session, f"https://t.me/{channel}/{post_id}?embed=1&mode=tme")
+    if not html:
         return None
+    soup = BeautifulSoup(html, "lxml")
+    text_elem = soup.find("div", class_="tgme_widget_message_text")
+    if not text_elem:
+        return None
+    return _html_to_text(text_elem).strip()
+
+
+async def _fetch_via_feed(
+    session: aiohttp.ClientSession, channel: str, post_id: str
+) -> str | None:
+    """Запасной путь — лента канала. Ищет пост по точному data-post."""
+    html = await _get(session, f"https://t.me/s/{channel}?before={int(post_id) + 1}")
+    if not html:
+        return None
+    soup = BeautifulSoup(html, "lxml")
+    post_wrap = soup.find("div", attrs={"data-post": f"{channel}/{post_id}"})
+    if not post_wrap:
+        # Подсказка на будущее: какие ID лента реально отдала рядом
+        nearby = [
+            d.get("data-post", "").split("/")[-1]
+            for d in soup.find_all("div", attrs={"data-post": True})
+        ]
+        logger.warning(
+            f"{channel}/{post_id}: в ленте нет такого ID. Рядом: {nearby[-8:]}"
+        )
+        return None
+    text_elem = post_wrap.find("div", class_="tgme_widget_message_text")
+    if not text_elem:
+        return None
+    return _html_to_text(text_elem).strip()
+
+
+async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> str | None:
+    channel, post_id = post_path.split("/")
+    for name, fetcher in (("embed", _fetch_via_embed), ("лента", _fetch_via_feed)):
+        try:
+            text = await fetcher(session, channel, post_id)
+        except Exception as e:
+            logger.error(f"{post_path}: способ «{name}» упал — {e}")
+            continue
+        if text:
+            logger.debug(f"{post_path}: получен через «{name}», {len(text)} символов")
+            return text
+    logger.warning(f"{post_path}: текст не удалось получить ни одним способом")
+    return None
 
 
 async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = False) -> dict:
