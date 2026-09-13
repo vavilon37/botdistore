@@ -100,7 +100,11 @@ async def _get(session: aiohttp.ClientSession, url: str) -> str | None:
         if resp.status != 200:
             logger.warning(f"{url} -> HTTP {resp.status}")
             return None
-        return await resp.text()
+        body = await resp.text()
+        if not body.strip():
+            logger.warning(f"{url} -> HTTP 200, но тело пустое")
+            return None
+        return body
 
 
 async def _fetch_via_embed(
@@ -108,12 +112,18 @@ async def _fetch_via_embed(
 ) -> str | None:
     """Одиночный виджет поста. В отличие от ленты понимает альбомы:
     пост с несколькими фото отдаётся по своему прямому ID."""
-    html = await _get(session, f"https://t.me/{channel}/{post_id}?embed=1&mode=tme")
+    html = await _get(session, f"https://t.me/{channel}/{post_id}?embed=1")
     if not html:
         return None
     soup = BeautifulSoup(html, "lxml")
     text_elem = soup.find("div", class_="tgme_widget_message_text")
     if not text_elem:
+        has_widget = bool(soup.find("div", class_="tgme_widget_message"))
+        logger.warning(
+            f"{channel}/{post_id}: embed без текста "
+            f"(карточка {'есть' if has_widget else 'отсутствует'}, "
+            f"{len(html)} байт)"
+        )
         return None
     return _html_to_text(text_elem).strip()
 
@@ -127,20 +137,42 @@ async def _fetch_via_feed(
         return None
     soup = BeautifulSoup(html, "lxml")
     post_wrap = soup.find("div", attrs={"data-post": f"{channel}/{post_id}"})
-    if not post_wrap:
-        # Подсказка на будущее: какие ID лента реально отдала рядом
-        nearby = [
-            d.get("data-post", "").split("/")[-1]
-            for d in soup.find_all("div", attrs={"data-post": True})
-        ]
+    if post_wrap:
+        text_elem = post_wrap.find("div", class_="tgme_widget_message_text")
+        if text_elem:
+            return _html_to_text(text_elem).strip()
+        logger.warning(f"{channel}/{post_id}: карточка в ленте есть, текста внутри нет")
+
+    # Альбом: несколько фото склеиваются в одну карточку, её data-post
+    # не совпадает с ID из ссылки. Берём ближайшую карточку с текстом.
+    target = int(post_id)
+    candidates = []
+    for div in soup.find_all("div", attrs={"data-post": True}):
+        raw = div.get("data-post", "").split("/")[-1]
+        if not raw.isdigit():
+            continue
+        elem = div.find("div", class_="tgme_widget_message_text")
+        if elem:
+            candidates.append((abs(int(raw) - target), raw, elem))
+
+    if not candidates:
+        logger.warning(f"{channel}/{post_id}: в ленте вообще нет карточек с текстом")
+        return None
+
+    distance, found_id, elem = min(candidates, key=lambda c: c[0])
+    if distance > 5:
+        ids = sorted(c[1] for c in candidates)
         logger.warning(
-            f"{channel}/{post_id}: в ленте нет такого ID. Рядом: {nearby[-8:]}"
+            f"{channel}/{post_id}: подходящей карточки нет, ближайшая {found_id}. "
+            f"Всего в ленте: {ids[-8:]}"
         )
         return None
-    text_elem = post_wrap.find("div", class_="tgme_widget_message_text")
-    if not text_elem:
-        return None
-    return _html_to_text(text_elem).strip()
+
+    if distance:
+        logger.info(
+            f"{channel}/{post_id}: похоже на альбом, текст взят из карточки {found_id}"
+        )
+    return _html_to_text(elem).strip()
 
 
 async def _fetch_post_text(session: aiohttp.ClientSession, post_path: str) -> str | None:
