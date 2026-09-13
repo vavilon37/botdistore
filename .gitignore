@@ -3,8 +3,14 @@
 __pycache__/
 *.db
 *.pyc
+
+# Кэши прайсов и состояние монитора (в проде живут в DATA_DIR)
+data/
 price_cache.json
 headphones_cache.json
 mac_cache.json
 tablets_cache.json
+samsung_cache.json
+pixel_cache.json
+watch_cache.json
 monitor_state.json

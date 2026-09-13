@@ -9,7 +9,10 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-MONITOR_STATE_FILE = os.path.join(os.path.dirname(__file__), "monitor_state.json")
+DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(__file__))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+MONITOR_STATE_FILE = os.path.join(DATA_DIR, "monitor_state.json")
 
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "3600"))
 
@@ -58,8 +61,11 @@ HEADERS = {
 
 def _load_state() -> dict:
     if Path(MONITOR_STATE_FILE).exists():
-        with open(MONITOR_STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(MONITOR_STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Битый monitor_state.json ({e}), начинаем с чистого")
     return {}
 
 
@@ -119,22 +125,32 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
     Возвращает dict с итогами: fetched, processed, errors, failed_fetch.
     """
     state = _load_state()
-    stats = {"fetched": 0, "processed": 0, "errors": [], "failed_fetch": []}
+    stats = {"fetched": 0, "processed": 0, "errors": [], "failed_fetch": [], "restored": []}
 
+    backup = {}
     if force:
-        # Сбрасываем кэши перед force-прогоном, чтобы не накапливались дубли
+        # Кэши обнуляются перед прогоном, иначе iPhone-ветка накапливает дубли.
+        # Но сначала снимаем копию: если парсинг ничего не даст (сменился формат
+        # прайса или пост удалён), старые цены вернём вместо пустого раздела.
         from handlers import (
+            _load_cache, _load_mac_cache, _load_hp_cache,
+            _load_tablets_cache, _load_samsung_cache, _load_pixel_cache,
+            _load_watch_cache,
             _save_cache, _save_mac_cache, _save_hp_cache,
             _save_tablets_cache, _save_samsung_cache, _save_pixel_cache,
             _save_watch_cache,
         )
-        _save_cache({})
-        _save_mac_cache({})
-        _save_hp_cache({})
-        _save_tablets_cache({})
-        _save_samsung_cache({})
-        _save_pixel_cache({})
-        _save_watch_cache({})
+        backup = {
+            "iPhone":   (_load_cache(), _load_cache, _save_cache),
+            "Mac":      (_load_mac_cache(), _load_mac_cache, _save_mac_cache),
+            "Наушники": (_load_hp_cache(), _load_hp_cache, _save_hp_cache),
+            "Планшеты": (_load_tablets_cache(), _load_tablets_cache, _save_tablets_cache),
+            "Samsung":  (_load_samsung_cache(), _load_samsung_cache, _save_samsung_cache),
+            "Pixel":    (_load_pixel_cache(), _load_pixel_cache, _save_pixel_cache),
+            "Watch":    (_load_watch_cache(), _load_watch_cache, _save_watch_cache),
+        }
+        for snapshot, _, save_fn in backup.values():
+            save_fn({})
 
     async with aiohttp.ClientSession() as session:
         tasks = [_fetch_post_text(session, p) for p in TRACKED_POSTS]
@@ -166,9 +182,20 @@ async def check_and_process(bot, admin_ids: set, process_text_fn, force: bool = 
             logger.error(f"Ошибка обработки {post_path}: {e}")
             stats["errors"].append(f"{post_path}: {e}")
 
+    # Категории, которые после прогона остались пустыми, но раньше данные имели,
+    # — это молчаливый сбой парсинга. Возвращаем старые цены и сообщаем админу.
+    for name, (snapshot, load_fn, save_fn) in backup.items():
+        if snapshot and not load_fn():
+            save_fn(snapshot)
+            stats["restored"].append(name)
+            logger.warning(
+                f"{name}: парсинг не дал ни одной позиции, откатили кэш на прошлую версию"
+            )
+
     _save_state(state)
     logger.info(
         f"Монитор: получено {stats['fetched']}, обработано {stats['processed']}, "
-        f"ошибок {len(stats['errors'])}, недоступно {len(stats['failed_fetch'])}"
+        f"ошибок {len(stats['errors'])}, недоступно {len(stats['failed_fetch'])}, "
+        f"откатов {len(stats['restored'])}"
     )
     return stats

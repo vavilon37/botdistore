@@ -18,7 +18,10 @@ from aiogram.exceptions import TelegramBadRequest
 import database as db
 import keyboards as kb
 
-PRICE_CACHE_FILE = os.path.join(os.path.dirname(__file__), "price_cache.json")
+DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(__file__))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+PRICE_CACHE_FILE = os.path.join(DATA_DIR, "price_cache.json")
 PRICE_MARKUP = 2000
 
 # Временный буфер до команды "готово": {series: [msg_text, ...]}
@@ -89,7 +92,7 @@ def _detect_series(text: str) -> list[str]:
     """
     t = _normalize(text)
     found = []
-    for series in ["17", "16", "15", "14", "13", "12"]:
+    for series in IPHONE_SERIES:
         # Вариант 1: явно написано "iPhone 17 ..."
         explicit = re.search(rf"iPhone\s+{series}\b", t, re.IGNORECASE)
         # Вариант 2: строка начинается с серии и модели (как в прайсе)
@@ -146,17 +149,37 @@ _EXCLUDE_LINE_PATTERNS = re.compile(
 )
 
 
+# Поддерживаемые серии iPhone. Добавить новую — дописать сюда, регулярка ниже
+# рассчитана на двузначные номера 12-29, менять её при этом не нужно.
+IPHONE_SERIES = ["20", "19", "18", "17", "16", "15", "14", "13", "12"]
+_SERIES_RE = r"(?:1[2-9]|2\d)"
+
+# Цена: 105.000 / 105,000 / 105 000 / 105000.
+# Точка и запятая однозначны. Пробел и слитную запись принимаем только в конце
+# строки или перед валютой — иначе "256 - 105 000" склеит объём памяти с ценой.
+_CUR = r"(?:[₽Рр]|руб|rub|$)"
+_PRICE_RE = re.compile(
+    rf"\b(\d{{2,3}})([.,])(\d{{3}})\b"
+    rf"|\b(\d{{2,3}})(\s)(\d{{3}})\b(?=\s*{_CUR})"
+    rf"|\b(\d{{5,6}})\b(?=\s*{_CUR})",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _has_price(line: str) -> bool:
+    return bool(_PRICE_RE.search(line))
+
+
 def _is_iphone_price_line(line: str) -> bool:
     """Строка с ценой на iPhone: начинается с номера серии 12-17 или 'iPhone 12-17'."""
     if _EXCLUDE_LINE_PATTERNS.search(line):
         return False
     line_n = _normalize(line)
     has_model_start = bool(re.match(
-        r"^\s*(iPhone\s+)?1[2-7]\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{2,4}\b)",
+        rf"^\s*(iPhone\s+)?{_SERIES_RE}\s*(Pro|Plus|Max|Air|mini|[еe]\b|\d{{2,4}}\b)",
         line_n, re.IGNORECASE
     ))
-    has_price = bool(re.search(r"\d{2,3}[.]\d{3}", line))
-    return has_model_start and has_price
+    return has_model_start and _has_price(line)
 
 
 def _is_footnote_line(line: str) -> bool:
@@ -167,7 +190,7 @@ def _is_footnote_line(line: str) -> bool:
     return False
 
 
-HEADPHONES_CACHE_FILE = os.path.join(os.path.dirname(__file__), "headphones_cache.json")
+HEADPHONES_CACHE_FILE = os.path.join(DATA_DIR, "headphones_cache.json")
 
 HP_CATEGORIES = {
     "airpods": "AirPods",
@@ -277,7 +300,7 @@ def _save_hp_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
-MAC_CACHE_FILE = os.path.join(os.path.dirname(__file__), "mac_cache.json")
+MAC_CACHE_FILE = os.path.join(DATA_DIR, "mac_cache.json")
 
 MAC_CATEGORIES = {
     "macbook_pro": "MacBook Pro",
@@ -458,7 +481,7 @@ def _save_mac_cache(cache: dict):
 
 # ─── Планшеты ────────────────────────────────────────────────────────────────
 
-TABLETS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "tablets_cache.json")
+TABLETS_CACHE_FILE = os.path.join(DATA_DIR, "tablets_cache.json")
 
 TABLET_CATEGORIES = {
     "ipad": "iPad",
@@ -632,7 +655,7 @@ def _save_tablets_cache(cache: dict):
 #  SAMSUNG
 # ══════════════════════════════════════════════════════
 
-SAMSUNG_CACHE_FILE = os.path.join(os.path.dirname(__file__), "samsung_cache.json")
+SAMSUNG_CACHE_FILE = os.path.join(DATA_DIR, "samsung_cache.json")
 SAMSUNG_MARKUP = 2000
 
 SAMSUNG_CATEGORIES = {
@@ -774,7 +797,7 @@ def _save_samsung_cache(cache: dict):
 #  PIXEL / ONEPLUS / NOTHING
 # ══════════════════════════════════════════════════════
 
-PIXEL_CACHE_FILE = os.path.join(os.path.dirname(__file__), "pixel_cache.json")
+PIXEL_CACHE_FILE = os.path.join(DATA_DIR, "pixel_cache.json")
 PIXEL_MARKUP = 2000
 
 PIXEL_CATEGORIES = {
@@ -914,7 +937,7 @@ def _save_pixel_cache(cache: dict):
 #  APPLE WATCH
 # ══════════════════════════════════════════════════════
 
-WATCH_CACHE_FILE = os.path.join(os.path.dirname(__file__), "watch_cache.json")
+WATCH_CACHE_FILE = os.path.join(DATA_DIR, "watch_cache.json")
 WATCH_MARKUP = 2000
 
 WATCH_CATEGORIES = {
@@ -1093,16 +1116,23 @@ def _split_prices_and_footnotes(text: str) -> tuple[str, str]:
 
 def _add_markup_to_prices(text: str) -> str:
     """Добавляет PRICE_MARKUP к ценам в строках с iPhone."""
-    price_pattern = re.compile(r"(\d{2,3})[.](\d{3})")
     lines = text.split("\n")
     result = []
     for line in lines:
         if _is_iphone_price_line(line):
             def replace_price(m):
-                price = int(m.group(1)) * 1000 + int(m.group(2))
+                if m.group(1):            # 105.000 / 105,000
+                    price = int(m.group(1)) * 1000 + int(m.group(3))
+                    sep = m.group(2)
+                elif m.group(4):          # 105 000
+                    price = int(m.group(4)) * 1000 + int(m.group(6))
+                    sep = m.group(5)
+                else:                     # 105000
+                    price = int(m.group(7))
+                    sep = ""
                 new_price = price + PRICE_MARKUP
-                return f"{new_price // 1000}.{new_price % 1000:03d}"
-            line = price_pattern.sub(replace_price, line)
+                return f"{new_price // 1000}{sep}{new_price % 1000:03d}"
+            line = _PRICE_RE.sub(replace_price, line)
             line = line.replace("*", "").strip()
         result.append(line)
     return "\n".join(result)
