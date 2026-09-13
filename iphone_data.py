@@ -135,3 +135,23 @@ IPHONE_GROUPS = {
     "iPhone 16": ["iPhone 16", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max"],
     "iPhone 17": ["iPhone 17", "iPhone Air", "iPhone 17 Pro", "iPhone 17 Pro Max"],
 }
+
+
+# --- Разделы прайса новых iPhone ---
+# Ключ — как хранится в price_cache.json, значение — подпись на кнопке.
+# Разбиение повторяет структуру постов поставщика.
+IPHONE_SECTIONS = {
+    "18":    "iPhone 18",
+    "17pro": "iPhone 17 Pro / Pro Max",
+    "17":    "iPhone 17 / 17 Air",
+    "16":    "iPhone 16",
+    "13-15": "iPhone 13–15",
+}
+
+# Порядок кнопок сверху вниз
+IPHONE_SECTION_ORDER = ["18", "17pro", "17", "16", "13-15"]
+
+# Разделы, которые пока заведомо пустые: текст вместо «цены недоступны»
+IPHONE_PENDING_SECTIONS = {
+    "18": "🔜 Скоро в наличии",
+}

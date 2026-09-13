@@ -17,6 +17,9 @@ from aiogram.exceptions import TelegramBadRequest
 
 import database as db
 import keyboards as kb
+from iphone_data import (
+    IPHONE_SECTIONS, IPHONE_SECTION_ORDER, IPHONE_PENDING_SECTIONS,
+)
 
 DATA_DIR = os.getenv("DATA_DIR", os.path.dirname(__file__))
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -188,6 +191,51 @@ def _is_footnote_line(line: str) -> bool:
         if re.search(pat, line):
             return True
     return False
+
+
+def _section_for_line(line: str) -> str | None:
+    """К какому разделу прайса относится строка. None — строка не про iPhone.
+
+    Раздел определяется по самой строке, а не по шапке поста: поставщик
+    свободно меняет заголовки, и привязка к ним уже один раз стоила нам
+    пустого раздела.
+    """
+    if not _is_iphone_price_line(line):
+        return None
+    line_n = _normalize(line)
+    m = re.match(rf"^\s*(?:iPhone\s+)?({_SERIES_RE})", line_n, re.IGNORECASE)
+    if not m:
+        return None
+    series = m.group(1)
+    if series == "17":
+        return "17pro" if re.search(r"\bPro\b", line_n, re.IGNORECASE) else "17"
+    if series in ("13", "14", "15"):
+        return "13-15"
+    return series if series in IPHONE_SECTIONS else None
+
+
+def _split_by_sections(text: str) -> dict[str, str]:
+    """Разбирает пост на разделы. Пояснения дублируются в каждый раздел."""
+    buckets: dict[str, list[str]] = {}
+    footnotes: list[str] = []
+    in_footnote = False
+
+    for line in text.split("\n"):
+        if _is_footnote_line(line):
+            in_footnote = True
+        if in_footnote:
+            footnotes.append(line)
+            continue
+        section = _section_for_line(line)
+        if section:
+            buckets.setdefault(section, []).append(line)
+
+    foot = "\n".join(footnotes).strip()
+    order = {s: i for i, s in enumerate(IPHONE_SECTION_ORDER)}
+    return {
+        s: "\n".join(buckets[s]) + (("\n\n" + foot) if foot else "")
+        for s in sorted(buckets, key=lambda x: order.get(x, 99))
+    }
 
 
 HEADPHONES_CACHE_FILE = os.path.join(DATA_DIR, "headphones_cache.json")
@@ -1339,13 +1387,18 @@ async def cb_new_type_back(call: CallbackQuery):
 async def cb_new_series(call: CallbackQuery):
     from bot import ADMIN_IDS
     series = call.data.split(":")[1]
+    label = IPHONE_SECTIONS.get(series, series)
     cache = _load_cache()
     entry = cache.get(series)
     is_admin = call.from_user.id in ADMIN_IDS
     if not entry:
+        # Раздел заведён заранее и пока пуст — это не сбой, так и задумано
+        if series in IPHONE_PENDING_SECTIONS:
+            await call.answer(IPHONE_PENDING_SECTIONS[series], show_alert=True)
+            return
         if is_admin:
             await call.answer(
-                f"⚠️ Цены iPhone {series} не загружены. Перешлите сообщение из канала поставщика.",
+                f"⚠️ Цены «{label}» не загружены. Перешлите сообщение из канала поставщика.",
                 show_alert=True
             )
         else:
@@ -1359,13 +1412,13 @@ async def cb_new_series(call: CallbackQuery):
     disclaimer = (
         f"⚠️ Цены актуальны на момент последнего обновления. "
         f"Для уточнения пишите @idistoreman\n\n"
-        f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
+        f"📱 <b>{IPHONE_SECTIONS.get(series, series)}</b>  🕐 {updated}\n\n"
     )
     # Каждая часть — отдельное сохранённое сообщение
     msgs = entry.get("msgs") or ([entry["text"]] if entry.get("text") else None)
     if not msgs:
         if is_admin:
-            await call.answer(f"⚠️ Цены iPhone {series} не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
+            await call.answer(f"⚠️ Цены «{label}» не загружены. Перешлите сообщение из канала поставщика.", show_alert=True)
         else:
             await call.answer("Цены временно недоступны. Напишите администратору @idistoreman", show_alert=True)
         return
@@ -2617,7 +2670,7 @@ async def _send_preview(message: Message):
         disclaimer = (
             f"⚠️ Цены актуальны на момент последнего обновления. "
             f"Для уточнения пишите @idistoreman\n\n"
-            f"📱 <b>iPhone {series}</b>  🕐 {updated}\n\n"
+            f"📱 <b>{IPHONE_SECTIONS.get(series, series)}</b>  🕐 {updated}\n\n"
         )
         price_blocks = []
         seen_footnote_lines = []
@@ -2764,7 +2817,7 @@ async def cb_preview_save(call: CallbackQuery):
                 clean_msgs[-1] = clean_msgs[-1] + "\n\n" + _custom_notes[series]
             msgs = clean_msgs
         cache[series] = {"msgs": msgs, "updated_at": entry["updated_at"]}
-        saved.append(f"iPhone {series}")
+        saved.append(IPHONE_SECTIONS.get(series, series))
     _save_cache(cache)
     _preview_cache.clear()
     _custom_notes.clear()
@@ -3162,25 +3215,23 @@ async def cb_mac_category(call: CallbackQuery):
 
 async def process_price_text(bot, admin_ids: set, text: str, silent: bool = False):
     """Парсит текст поста и автоматически сохраняет цены в кэш."""
-    series_list = _detect_series(text)
-    mac_cats = [] if series_list else _detect_mac_categories(text)
-    hp_cats = [] if (series_list or mac_cats) else _detect_hp_categories(text)
-    tab_cats = [] if (series_list or mac_cats or hp_cats) else _detect_tablet_categories(text)
+    sec_split = _split_by_sections(text)
+    mac_cats = [] if sec_split else _detect_mac_categories(text)
+    hp_cats = [] if (sec_split or mac_cats) else _detect_hp_categories(text)
+    tab_cats = [] if (sec_split or mac_cats or hp_cats) else _detect_tablet_categories(text)
 
-    if series_list:
-        split = _split_by_series(text, series_list) if len(series_list) > 1 else {series_list[0]: text}
+    if sec_split:
         cache = _load_cache()
-        for s, s_text in split.items():
-            new_msgs = [_add_markup_to_prices(_filter_iphone_lines(s_text))]
-            new_msgs = [m for m in new_msgs if m.strip()]
-            if not new_msgs:
+        for sec, sec_text in sec_split.items():
+            msg = _add_markup_to_prices(sec_text)
+            if not msg.strip():
                 continue
-            existing = cache.get(s, {})
+            existing = cache.get(sec, {})
             old_msgs = existing.get("msgs", [])
-            cache[s] = {"msgs": old_msgs + new_msgs, "updated_at": _now_msk()}
+            cache[sec] = {"msgs": old_msgs + [msg], "updated_at": _now_msk()}
         _save_cache(cache)
         if not silent:
-            names = ", ".join(f"iPhone {s}" for s in split)
+            names = ", ".join(IPHONE_SECTIONS[s] for s in sec_split)
             for aid in admin_ids:
                 await bot.send_message(aid, f"✅ Авто: обновлены цены — {names}")
 
@@ -3593,36 +3644,22 @@ async def handle_forwarded(message: Message):
         return
 
     # Приоритет: iPhone > Mac > AirPods > Планшеты
-    series_list = _detect_series(text)
-    mac_cats = [] if series_list else _detect_mac_categories(text)
-    hp_cats = [] if (series_list or mac_cats) else _detect_hp_categories(text)
-    tab_cats = [] if (series_list or mac_cats or hp_cats) else _detect_tablet_categories(text)
+    sec_split = _split_by_sections(text)
+    mac_cats = [] if sec_split else _detect_mac_categories(text)
+    hp_cats = [] if (sec_split or mac_cats) else _detect_hp_categories(text)
+    tab_cats = [] if (sec_split or mac_cats or hp_cats) else _detect_tablet_categories(text)
 
-    if series_list:
-        # iPhone
-        if len(series_list) == 1:
-            s = series_list[0]
-            if s not in _draft:
-                _draft[s] = []
-            _draft[s].append(text)
-            part_num = len(_draft[s])
-            await message.answer(
-                f"✅ Часть {part_num} принята — iPhone {s}\n"
-                f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
-                parse_mode="HTML"
-            )
-        else:
-            split = _split_by_series(text, series_list)
-            for s, s_text in split.items():
-                if s not in _draft:
-                    _draft[s] = []
-                _draft[s].append(s_text)
-            names = ", ".join(f"iPhone {s}" for s in split)
-            await message.answer(
-                f"✅ Разбито на серии: {names}\n"
-                f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
-                parse_mode="HTML"
-            )
+    if sec_split:
+        # iPhone — раскладываем по тем же разделам, что и автообновление
+        for sec, sec_text in sec_split.items():
+            _draft.setdefault(sec, []).append(sec_text)
+        names = ", ".join(IPHONE_SECTIONS[s] for s in sec_split)
+        parts = max(len(_draft[s]) for s in sec_split)
+        await message.answer(
+            f"✅ Часть {parts} принята — {names}\n"
+            f"Пересылай ещё или напиши <b>готово</b> чтобы сохранить.",
+            parse_mode="HTML"
+        )
     elif mac_cats:
         # Маки — разбиваем по категориям сразу
         split = _split_mac_by_category(text)

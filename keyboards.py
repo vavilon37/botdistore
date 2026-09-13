@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-from iphone_data import IPHONE_GROUPS, IPHONE_MODELS
+from iphone_data import (
+    IPHONE_GROUPS, IPHONE_MODELS, IPHONE_SECTIONS, IPHONE_SECTION_ORDER,
+)
 
 CATEGORIES = ["Смартфоны", "Ноутбуки", "Планшеты", "Наушники", "Аксессуары", "Другое"]
 CONDITIONS = ["Новое", "Как новое", "Хорошее", "Удовлетворительное"]
@@ -244,8 +246,10 @@ def pixel_back_kb() -> InlineKeyboardMarkup:
 
 
 def iphone_series_kb() -> InlineKeyboardMarkup:
-    series = ["17", "16", "15", "14", "13", "12"]
-    buttons = [[InlineKeyboardButton(text=s, callback_data=f"new_series:{s}")] for s in series]
+    buttons = [
+        [InlineKeyboardButton(text=IPHONE_SECTIONS[s], callback_data=f"new_series:{s}")]
+        for s in IPHONE_SECTION_ORDER
+    ]
     buttons.append([InlineKeyboardButton(text="◀️ Назад", callback_data="new_type:back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

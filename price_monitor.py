@@ -17,13 +17,11 @@ MONITOR_STATE_FILE = os.path.join(DATA_DIR, "monitor_state.json")
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "3600"))
 
 TRACKED_POSTS = [
-    # Айфоны
-    "BigSaleApple/12854",
-    "BigSaleApple/12472",
-    "BigSaleApple/12471",
-    "BigSaleApple/12470",
-    "BigSaleApple/12468",
-    "BigSaleApple/12466",
+    # Айфоны — по одному посту на раздел прайса
+    "BigSaleApple/12966",   # 17 / 17 Air
+    "BigSaleApple/12968",   # 17 Pro / Pro Max
+    "BigSaleApple/12965",   # 16
+    "BigSaleApple/12964",   # 13-15
     # Маки
     "BigSaleApple/12463",
     "BigSaleApple/12464",
