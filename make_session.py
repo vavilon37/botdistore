@@ -14,7 +14,9 @@ tools), номер телефона, код из Telegram и облачный п
 показывать. Если утекла — отзовите сессию в Telegram:
 Настройки → Устройства → завершить сеанс.
 """
-from telethon import TelegramClient
+# telethon.sync превращает методы клиента в синхронные — без него
+# get_me() вернёт корутину, а не пользователя.
+from telethon.sync import TelegramClient
 from telethon.sessions import StringSession
 
 
@@ -28,10 +30,17 @@ def main():
         return
 
     with TelegramClient(StringSession(), int(api_id), api_hash) as client:
-        me = client.get_me()
-        print(f"\nВошли как @{me.username or me.id}")
+        # Печатаем строку сразу после входа: если что-то упадёт дальше,
+        # сессия уже создана на стороне Telegram и потерять её нельзя.
         print("\nСтрока сессии — скопируйте целиком в переменную TG_SESSION:\n")
         print(client.session.save())
+
+        try:
+            me = client.get_me()
+            print(f"\nВошли как @{me.username or me.id}")
+        except Exception as e:
+            print(f"\n(имя аккаунта получить не удалось: {e} — на сессию не влияет)")
+
         print("\nНе коммитьте её и никому не показывайте.")
 
 
